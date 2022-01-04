@@ -1,0 +1,15 @@
+# top-most EditorConfig file
+root = true
+
+# Don't use tabs for indentation.
+[*]
+indent_style = space
+# (Please don't specify an indent_size here; that has too many unintended consequences.)
+
+# C# files
+[*.cs]
+indent_size = 2
+insert_final_newline = true
+# charset = utf-8-bom
+
+file_header_template = unset
