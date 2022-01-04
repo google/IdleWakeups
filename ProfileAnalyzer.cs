@@ -13,6 +13,7 @@
 // limitations under the License.
 
 using Microsoft.Windows.EventTracing.Cpu;
+using System.Text;
 
 namespace IdleWakeups
 {
@@ -159,7 +160,7 @@ namespace IdleWakeups
 
         // Get the process that made this thread become eligible to be switched in, if available.
         var readyingProcessImageName = sample.ReadyingProcess?.ImageName ?? "Unknown";
-        if (sample.ReadyThreadEvent != null && sample.ReadyThreadEvent.IsExecutingDeferredProcedureCall)
+        if (sample.ReadyThreadEvent?.IsExecutingDeferredProcedureCall ?? false)
         {
           // If the readying thread is executing a deferred procedure call then the process is not
           // relevant; it's just a temporary host for the DPC.
@@ -210,6 +211,7 @@ namespace IdleWakeups
 
       composite = "{0,-25}{1}{2,6}";
       Console.WriteLine("Readying processes are:");
+      Console.WriteLine();
       var sortedFilteredProcessReadyProcesses =
         new List<KeyValuePair<string, long>>(_filteredProcessReadyProcesses);
       sortedFilteredProcessReadyProcesses.Sort((x, y) => y.Value.CompareTo(x.Value));
@@ -223,13 +225,34 @@ namespace IdleWakeups
       Console.WriteLine(composite, "", sep, totalReadyProcesses);
       Console.WriteLine();
 
-      var sortedIdleWakeupsByThreadId = new List<KeyValuePair<int, IdleWakeup>>(_idleWakeupsByThreadId);
-      sortedIdleWakeupsByThreadId.Sort((x, y)
-          => y.Value.ContextSwitchCount.CompareTo(x.Value.ContextSwitchCount));
+      Console.WriteLine("Idle-wakeup (Idle->chrome.exe) distribution with thread IDs as keys:");
+      Console.WriteLine();
 
       composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-20}{7}{8,-55}{9}{10,6}";
       sep = _options.Tabbed ? "\t" : " ";
-      foreach (var idleWakeup in sortedIdleWakeupsByThreadId)
+      string header = string.Format(composite,
+          "TID", sep,
+          "PID", sep,
+          "Type", sep,
+          "Subtype", sep,
+          "Thread Name", sep,
+          "Count");
+      Console.WriteLine(header);
+      StringBuilder sbLine = new StringBuilder();
+      if (!_options.Tabbed)
+      {
+        for (int i = 0; i < header.Length + 1; i++)
+        {
+          sbLine.Append("=");
+        }
+        Console.WriteLine(sbLine.ToString());
+      }
+
+      composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-20}{7}{8,-55}{9}{10,6}";
+      var sortedIdleWakeupsByThreadId = new List<KeyValuePair<int, IdleWakeup>>(_idleWakeupsByThreadId);
+      sortedIdleWakeupsByThreadId.Sort((x, y)
+          => y.Value.ContextSwitchCount.CompareTo(x.Value.ContextSwitchCount));
+      foreach (var idleWakeup in sortedIdleWakeupsByThreadId.Take(30))
       {
         Console.WriteLine(composite,
           idleWakeup.Key, sep,
@@ -241,6 +264,10 @@ namespace IdleWakeups
       }
 
       var totalContextSwitchCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount);
+      if (!_options.Tabbed)
+      {
+        Console.WriteLine(sbLine.ToString());
+      }
       Console.WriteLine(composite,
           "", sep,
           "", sep,
