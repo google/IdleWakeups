@@ -7,10 +7,10 @@
 	<Authors>Henrik Andreasson</Authors>
 	<Company>Google Inc.</Company>
 	<Description>IdleWakeups analyzes ETW traces looking for Idle-Wakeups.</Description>
-	<Copyright>Copyright 2021 Google Inc</Copyright>
+	<Copyright>Copyright 2022 Google Inc</Copyright>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Platforms>AnyCPU;x64;x86</Platforms>
+    <Platforms>x64;x86</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
