@@ -80,12 +80,10 @@ namespace IdleWakeups
           type = commandLineArg[kProcessTypeParam.Length..];
           if (type == kChrashpadProcess)
           {
-            // Shorten the tag for better formatting.
             type = kChrashpadProcessShort;
           }
           else if (type == kRendererProcessType && commandLine.Contains(kExtensionParam))
           {
-            // Extension processes are renderers with '--extension-process' on the command line.
             type = kExtensionProcess;
           }
           else if (type == kUtilityProcessType)
@@ -173,60 +171,41 @@ namespace IdleWakeups
 
     public void WriteSummary()
     {
-      var sep = _options.Tabbed ? "\t" : " : ";
+      WriteHeader("High level summary:");
 
+      var sep = _options.Tabbed ? "\t" : " : ";
       if (_wallTimeStart < _wallTimeEnd)
       {
         var durationMs = (_wallTimeEnd - _wallTimeStart) * 1000;
         Console.WriteLine("{0,-25}{1}{2:F}", "Duration (msec)", sep, durationMs);
       }
-
       Console.Write("{0,-25}{1}", "Process filter", sep);
-      if (_options.ProcessFilterSet != null)
-      {
-        foreach (var process in _options.ProcessFilterSet)
-        {
-          if (!_options.Tabbed)
-          {
-            Console.Write($"{process} ");
-          }
-          else
-          {
-            Console.Write($"{process}\t");
-          }
-        }
-      }
-      else
-      {
-        Console.Write("*");
-      }
-      Console.WriteLine();
-
-      var composite = "{0,-25}{1}{2}";
-      Console.WriteLine(composite, "Context switches (On-CPU)", sep, _filteredProcessContextSwitch);
-      Console.WriteLine(composite, "Idle wakeups", sep, _filteredProcessIdleContextSwitch);
+      Console.WriteLine(ProcessFilterToString());
+      Console.WriteLine("{0,-25}{1}{2}", "Context switches (On-CPU)", sep, _filteredProcessContextSwitch);
+      Console.WriteLine("{0,-25}{1}{2}", "Idle wakeups", sep, _filteredProcessIdleContextSwitch);
       Console.WriteLine("{0,-25}{1}{2:F}", "Idle wakeups (%)",
-          sep, 100 * (double)_filteredProcessIdleContextSwitch / _filteredProcessContextSwitch);
+        sep, 100 * (double)_filteredProcessIdleContextSwitch / _filteredProcessContextSwitch);
       Console.WriteLine();
 
-      composite = "{0,-25}{1}{2,6}";
-      Console.WriteLine("Readying processes are:");
-      Console.WriteLine();
+      WriteHeader("Readying processes are:");
+
+      var composite = "{0,-25}{1}{2,6}";
       var sortedFilteredProcessReadyProcesses =
         new List<KeyValuePair<string, long>>(_filteredProcessReadyProcesses);
       sortedFilteredProcessReadyProcesses.Sort((x, y) => y.Value.CompareTo(x.Value));
       foreach (var filteredProcessReadyProcess in sortedFilteredProcessReadyProcesses)
       {
+        int length = filteredProcessReadyProcess.Key.Length;
         Console.WriteLine(composite,
-          filteredProcessReadyProcess.Key, sep,
+          filteredProcessReadyProcess.Key[..Math.Min(length, 25)], sep,
           filteredProcessReadyProcess.Value);
       }
       var totalReadyProcesses = _filteredProcessReadyProcesses.Sum(x => x.Value);
       Console.WriteLine(composite, "", sep, totalReadyProcesses);
       Console.WriteLine();
 
-      Console.WriteLine("Idle-wakeup (Idle->chrome.exe) distribution with thread IDs as keys:");
-      Console.WriteLine();
+      var processFilter = ProcessFilterToString();
+      WriteHeader($"Idle-wakeup (Idle -> {processFilter}) distribution with thread IDs as keys:");
 
       composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-20}{7}{8,-55}{9}{10,6}";
       sep = _options.Tabbed ? "\t" : " ";
@@ -238,14 +217,14 @@ namespace IdleWakeups
           "Thread Name", sep,
           "Count");
       Console.WriteLine(header);
-      StringBuilder sbLine = new StringBuilder();
+      StringBuilder sbHeaderLine = new StringBuilder();
       if (!_options.Tabbed)
       {
         for (int i = 0; i < header.Length + 1; i++)
         {
-          sbLine.Append("=");
+          sbHeaderLine.Append("=");
         }
-        Console.WriteLine(sbLine.ToString());
+        Console.WriteLine(sbHeaderLine.ToString());
       }
 
       composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-20}{7}{8,-55}{9}{10,6}";
@@ -266,7 +245,7 @@ namespace IdleWakeups
       var totalContextSwitchCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount);
       if (!_options.Tabbed)
       {
-        Console.WriteLine(sbLine.ToString());
+        Console.WriteLine(sbHeaderLine.ToString());
       }
       Console.WriteLine(composite,
           "", sep,
@@ -275,6 +254,27 @@ namespace IdleWakeups
           "", sep,
           "", sep,
           totalContextSwitchCount);
+    }
+
+    private void WriteHeader(string header)
+    {
+      Console.ForegroundColor = ConsoleColor.Yellow;
+      Console.WriteLine(header);
+      Console.WriteLine();
+      Console.ForegroundColor = ConsoleColor.White;
+    }
+
+    private string ProcessFilterToString()
+    {
+      StringBuilder sb = new StringBuilder();
+      if (_options.ProcessFilterSet == null)
+        return "*";
+      foreach (var item in _options.ProcessFilterSet)
+      {
+        sb.Append(item);
+        sb.Append(" ");
+      }
+      return sb.ToString().TrimEnd();
     }
 
     private readonly Options _options;
