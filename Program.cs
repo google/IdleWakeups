@@ -130,8 +130,11 @@ namespace IdleWakeups
             }
           }
 
+          Console.ForegroundColor = ConsoleColor.Yellow;
           Console.WriteLine($"{allProcesses.Count} unique process names found in " +
-                            $"{Path.GetFileName(opts.etlFileName)}.\n");
+                            $"{Path.GetFileName(opts.etlFileName)}:");
+          Console.WriteLine();
+          Console.ForegroundColor = ConsoleColor.White;
           foreach (var process in allProcesses)
           {
             Console.WriteLine(process);
