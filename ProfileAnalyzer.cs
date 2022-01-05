@@ -33,23 +33,20 @@ namespace IdleWakeups
       public long ContextSwitchCount { get; set; }
       public long ContextSwitchDPCCount { get; set; }
       public int ProcessId { get; set; }
-      public ProcessType ProcessType { get; set; }
+      public string ProcessName { get; set; }
+      public ChromeProcessType ProcessType { get; set; }
       public string ThreadName { get; set; }
     }
 
-    private struct ProcessType
+    private struct ChromeProcessType
     {
-      public ProcessType(string type, string? subType)
+      public ChromeProcessType(string type, string? subType)
       {
         Type = type;
         SubType = subType;
       }
-      // Process type for chrome.exe and process name (e.g. dwm.exe) for other processes.
       public string Type { get; set; }
 
-      // Chrome processes are special since the command-line contains a main type and a subtype.
-      // This field will be empty for non-Chrome PIDs.
-      // Example for a Chrome PID: Type = 'utility and SubType = 'AudioService'.
       public string? SubType { get; set; }
     }
 
@@ -111,14 +108,11 @@ namespace IdleWakeups
             iwakeup.ProcessId = contextSwitch.SwitchIn.Process.Id;
             iwakeup.ThreadName = contextSwitch.SwitchIn.Thread.Name;
             var commandLine = contextSwitch.SwitchIn.Process.CommandLine;
-            ProcessType processType = new ProcessType(switchInImageName, "");
+            iwakeup.ProcessName = switchInImageName;
             if (switchInImageName == "chrome.exe")
             {
-              // Special case for chrome.exe: add type and possibly subtype.
-              // Example: 'utility' and 'AudioService'. 
-              processType = GetChromeProcessType(commandLine);
+              iwakeup.ProcessType = GetChromeProcessType(commandLine);
             }
-            iwakeup.ProcessType = processType;
           }
           else
           {
@@ -215,11 +209,12 @@ namespace IdleWakeups
       // IDs for the filtered processes (default chrome.exe) act as keys.
       WriteHeader($"Idle-wakeup (Idle -> {processFilter}) distribution with thread IDs as keys:");
 
-      composite = "{0,6}{1}{2,6}{3}{4,-14}{5}{6,-20}{7}{8,-55}{9}{10,6}{11}{12,9}{13}{14,6}{15}{16,7}";
+      composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-12}{7}{8,-20}{9}{10,-55}{11}{12,6}{13}{14,9}{15}{16,6}{17}{18,7}";
       header = string.Format(composite,
         "TID", sep,
         "PID", sep,
-        "Process Name", sep,
+        "Process", sep,
+        "Type", sep,
         "Subtype", sep,
         "Thread Name", sep,
         "Count", sep,
@@ -238,6 +233,7 @@ namespace IdleWakeups
         Console.WriteLine(composite,
           idleWakeup.Key, sep,
           idleWakeup.Value.ProcessId, sep,
+          idleWakeup.Value.ProcessName, sep,
           idleWakeup.Value.ProcessType.Type, sep,
           idleWakeup.Value.ProcessType.SubType, sep,
           idleWakeup.Value.ThreadName, sep,
@@ -256,17 +252,18 @@ namespace IdleWakeups
         "", sep,
         "", sep,
         "", sep,
+        "", sep,
         totalContextSwitchCount, sep,
         "", sep,
         totalContextSwitchDPCCount, sep,
         "");
     }
 
-    private ProcessType GetChromeProcessType(string commandLine)
+    private ChromeProcessType GetChromeProcessType(string commandLine)
     {
       if (string.IsNullOrEmpty(commandLine))
       {
-        return new ProcessType("", "");
+        return new ChromeProcessType("", "");
       }
 
       const string kProcessTypeParam = "--type=";
@@ -312,7 +309,7 @@ namespace IdleWakeups
         }
       }
 
-      return new ProcessType(type, subtype);
+      return new ChromeProcessType(type, subtype);
     }
 
     private void WriteHeader(string header)
