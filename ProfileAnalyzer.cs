@@ -120,12 +120,23 @@ namespace IdleWakeups
           }
 
           _idleWakeupsByThreadId[switchInThreadId] = iwakeup;
+
+          // Get the last C-State the processor went into when it was idle.
+          // TODO(henrikand): perhaps exclude updating when in DPC.
+          var prevCState = contextSwitch.PreviousCState;
+          if (prevCState.HasValue)
+          {
+            _previousCStates.TryGetValue(prevCState.Value, out long cStateCount);
+            cStateCount += 1;
+            _previousCStates[prevCState.Value] = cStateCount;
+          }
         }
       }
     }
 
     public void WriteSummary()
     {
+      // Add a high-level summary first.
       WriteHeader("High level summary:");
 
       var sep = _options.Tabbed ? "\t" : " : ";
@@ -134,14 +145,15 @@ namespace IdleWakeups
         var durationMs = (_wallTimeEnd - _wallTimeStart) * 1000;
         Console.WriteLine("{0,-25}{1}{2:F}", "Duration (msec)", sep, durationMs);
       }
-      Console.Write("{0,-25}{1}", "Process filter", sep);
-      Console.WriteLine(ProcessFilterToString());
+      var processFilter = ProcessFilterToString();
+      Console.WriteLine("{0,-25}{1}{2}", "Process filter", sep, processFilter);
       Console.WriteLine("{0,-25}{1}{2}", "Context switches (On-CPU)", sep, _filteredProcessContextSwitch);
       Console.WriteLine("{0,-25}{1}{2}", "Idle wakeups", sep, _filteredProcessIdleContextSwitch);
       Console.WriteLine("{0,-25}{1}{2:F}", "Idle wakeups (%)",
         sep, 100 * (double)_filteredProcessIdleContextSwitch / _filteredProcessContextSwitch);
       Console.WriteLine();
 
+      // Append a list of reading processes next.
       WriteHeader("Readying processes are:");
 
       var composite = "{0,-25}{1}{2,6}";
@@ -159,31 +171,52 @@ namespace IdleWakeups
       Console.WriteLine(composite, "", sep, totalReadyProcesses);
       Console.WriteLine();
 
-      var processFilter = ProcessFilterToString();
+      // Add a C-State distribution.
+      WriteHeader($"Previous C-State (Idle -> {processFilter}) distribution with C-states as keys:");
+
+      composite = "{0,7}{1}{2,7}{3}{4,9:F}";
+      sep = _options.Tabbed ? "\t" : " ";
+      string header = string.Format(composite,
+        "C-State", sep,
+        "Count", sep,
+        "Count (%)");
+      Console.WriteLine(header);
+      WriteHeaderLine(header.Length + 1);
+
+      var sortedPreviousCStatesList = _previousCStates.Keys.ToList();
+      sortedPreviousCStatesList.Sort();
+      foreach (var key in sortedPreviousCStatesList)
+      {
+        Console.WriteLine(composite,
+          key, sep,
+          _previousCStates[key], sep,
+          100 * (double)_previousCStates[key] / _filteredProcessContextSwitch);
+      }
+      WriteHeaderLine(header.Length + 1);
+      var totalPreviousCStatesCount = _previousCStates.Sum(x => x.Value);
+      Console.WriteLine(composite,
+        "", sep,
+        totalPreviousCStatesCount, sep,
+        "");
+      Console.WriteLine();
+
+      // Finally, show the main table summarizing the full Idle-wakeup distribution where thread
+      // IDs for the filtered processes (default chrome.exe) act as keys.
       WriteHeader($"Idle-wakeup (Idle -> {processFilter}) distribution with thread IDs as keys:");
 
       composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-20}{7}{8,-55}{9}{10,6}{11}{12,9}{13}{14,6}{15}{16,7}";
-      sep = _options.Tabbed ? "\t" : " ";
-      string header = string.Format(composite,
-          "TID", sep,
-          "PID", sep,
-          "Type", sep,
-          "Subtype", sep,
-          "Thread Name", sep,
-          "Count", sep,
-          "Count/sec", sep,
-          "DPC", sep,
-          "DPC/sec");
+      header = string.Format(composite,
+        "TID", sep,
+        "PID", sep,
+        "Type", sep,
+        "Subtype", sep,
+        "Thread Name", sep,
+        "Count", sep,
+        "Count/sec", sep,
+        "DPC", sep,
+        "DPC/sec");
       Console.WriteLine(header);
-      StringBuilder sbHeaderLine = new StringBuilder();
-      if (!_options.Tabbed)
-      {
-        for (int i = 0; i < header.Length + 1; i++)
-        {
-          sbHeaderLine.Append("=");
-        }
-        Console.WriteLine(sbHeaderLine.ToString());
-      }
+      WriteHeaderLine(header.Length + 1);
 
       var durationInSec = _wallTimeEnd - _wallTimeStart;
       var sortedIdleWakeupsByThreadId = new List<KeyValuePair<int, IdleWakeup>>(_idleWakeupsByThreadId);
@@ -205,20 +238,17 @@ namespace IdleWakeups
 
       var totalContextSwitchCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount);
       var totalContextSwitchDPCCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchDPCCount);
-      if (!_options.Tabbed)
-      {
-        Console.WriteLine(sbHeaderLine.ToString());
-      }
+      WriteHeaderLine(header.Length + 1);
       Console.WriteLine(composite,
-          "", sep,
-          "", sep,
-          "", sep,
-          "", sep,
-          "", sep,
-          totalContextSwitchCount, sep,
-          "", sep,
-          totalContextSwitchDPCCount, sep,
-          "");
+        "", sep,
+        "", sep,
+        "", sep,
+        "", sep,
+        "", sep,
+        totalContextSwitchCount, sep,
+        "", sep,
+        totalContextSwitchDPCCount, sep,
+        "");
     }
 
     private ChromeProcessType GetChromeProcessType(string commandLine)
@@ -282,6 +312,19 @@ namespace IdleWakeups
       Console.ForegroundColor = ConsoleColor.White;
     }
 
+    private void WriteHeaderLine(int lenght)
+    {
+      StringBuilder sb = new StringBuilder();
+      if (!_options.Tabbed)
+      {
+        for (int i = 0; i < lenght; i++)
+        {
+          sb.Append("-");
+        }
+        Console.WriteLine(sb.ToString());
+      }
+    }
+
     private string ProcessFilterToString()
     {
       StringBuilder sb = new StringBuilder();
@@ -307,5 +350,7 @@ namespace IdleWakeups
     private Dictionary<int, IdleWakeup> _idleWakeupsByThreadId = new();
 
     private Dictionary<string, long> _filteredProcessReadyProcesses = new();
+
+    private Dictionary<int, long> _previousCStates = new();
   }
 }
