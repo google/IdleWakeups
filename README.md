@@ -1,11 +1,13 @@
 # IdleWakeups
 
-IdleWakeups detects idle wakeups in Chrome in an ETW. It uses the [.NET TraceProcessing API](https://www.nuget.org/packages/Microsoft.Windows.EventTracing.Processing.All)
+IdleWakeups detects idle wakeups in given processes from an ETW. It uses the [.NET TraceProcessing API](https://www.nuget.org/packages/Microsoft.Windows.EventTracing.Processing.All)
 to process ETW traces.
 
 This tool was built for processing ETW traces from Chrome, so the default values
 of the flags are based on that use case. It uses _NT_SYMCACHE_PATH and _NT_SYMBOL_PATH for
 symbolizing traces if set, otherwise it uses WPA defaults.
+
+See this [blog post](https://blogs.windows.com/windowsdeveloper/2019/05/09/announcing-traceprocessor-preview-0-1-0/) for details of the Trace Processor package used to drive this.
 
 ## Building
 
@@ -17,49 +19,35 @@ Build the provided Visual Studio Solution with VS 2022.
 
 ## Examples
 
-Export to specified pprof profile using default options:
+Scan trace file and print summary for idle wakeups using default options:
 
-    EtwToPprof -o profile.pb.gz trace.etl
+    IdleWakeups --printSummary trace.etl
+  
+Scan trace file and print summary for idle wakeups from all processes from 20s to 30s:
 
-Export samples from specified process names:
-
-    EtwToPprof -p viz_perftests.exe,dwm.exe trace.etl
-
-Export samples from all processes from 10s to 30s:
-
-    EtwToPprof -p * --timeEnd 30 --timeStart 10 trace.etl
-
-Export inlined functions and thread/process ids:
-
-    EtwToPprof --includeInlinedFunctions --includeProcessAndThreadIds trace.etl
+    IdleWakeups -s -p * --timeStart 20 --timeEnd 30 trace.etl
 
 ## Command line flags
 
-    -o, --outputFileName            (Default: profile.pb.gz) Output file name for gzipped pprof profile.
+    --listProcesses         (Default: false) Whether all process names (unique) shall be printed out instead of running an analysis.
 
-    -p, --processFilter             (Default: chrome.exe,dwm.exe,audiodg.exe) Filter for process names (comma-separated) to be included in the exported profile. All processes will be exported if set to *.
+    -p, --processFilter     (Default: chrome.exe) Filter for process names (comma-separated) to be included in the analysis. All processes will be analyzed if set to *.
 
-    --includeInlinedFunctions       (Default: false) Whether inlined functions should be included in the exported profile (slow).
+    --timeStart             Start of time range to analyze in seconds
 
-    --stripSourceFileNamePrefix     (Default: ^c:/b/s/w/ir/cache/builder/) Prefix regex to strip out of source file names in the exported profile.
+    --timeEnd               End of time range to analyze in seconds
 
-    --timeStart                     Start of time range to export in seconds
+    -s, --printSummary      (Default: false) Whether a summary shall be printed after the analysis is completed.
 
-    --timeEnd                       End of time range to export in seconds
+    --loadSymbols           (Default: true) Whether symbols should be loaded.
 
-    --includeProcessIds             (Default: false) Whether process ids are included in the exported profile.
+    -t, --tabbed            (Default: false) Print results as a tab-separated grid.
 
-    --includeProcessAndThreadIds    (Default: false) Whether process and thread ids are included in the exported profile.
+    --help                  Display this help screen.
 
-    --splitChromeProcesses          (Default: true) Whether chrome.exe processes are split by type (parsed from command line).
+    --version               Display version information.
 
-    --loadSymbols                   (Default: true) Whether symbols should be loaded.
-
-    --help                          Display this help screen.
-
-    --version                       Display version information.
-
-    etlFileName (pos. 0)            Required. ETL trace file name.
+    etlFileName (pos. 0)    Required. ETL trace file name.
 
 ## Disclaimer:
 
