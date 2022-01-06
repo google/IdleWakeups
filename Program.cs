@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Detect idle wakeups in Chrome in an ETW using TraceProcessing
+// Detects idle wakeups in Chrome in an ETW using TraceProcessing.
 // Explanations of the techniques can be found here:
 // https://randomascii.wordpress.com/2020/01/05/bulk-etw-trace-analysis-in-c/
 

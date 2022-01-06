@@ -1,53 +1,66 @@
-# New Project Template
+# IdleWakeups
 
-This repository contains a template that can be used to seed a repository for a
-new Google open source project.
+IdleWakeups detects idle wakeups in Chrome in an ETW. It uses the [.NET TraceProcessing API](https://www.nuget.org/packages/Microsoft.Windows.EventTracing.Processing.All)
+to process ETW traces.
 
-See [go/releasing](http://go/releasing) (available externally at
-https://opensource.google/docs/releasing/) for more information about
-releasing a new Google open source project.
+This tool was built for processing ETW traces from Chrome, so the default values
+of the flags are based on that use case. It uses _NT_SYMCACHE_PATH and _NT_SYMBOL_PATH for
+symbolizing traces if set, otherwise it uses WPA defaults.
 
-This template uses the Apache license, as is Google's default.  See the
-documentation for instructions on using alternate license.
+## Building
 
-## How to use this template
+Build the provided Visual Studio Solution with VS 2022.
 
-1. Clone it from GitHub.
-    * There is no reason to fork it.
-1. Create a new local repository and copy the files from this repo into it.
-1. Modify README.md and docs/contributing.md to represent your project, not the
-   template project.
-1. Develop your new project!
+### Nuget dependencies (included in solution)
+- CommandLineParser v2.8.0
+- Microsoft.Windows.EventTracing.Processing.All v1.9.2
 
-``` shell
-git clone https://github.com/google/new-project
-mkdir my-new-thing
-cd my-new-thing
-git init
-cp -r ../new-project/* ../new-project/.github .
-git add *
-git commit -a -m 'Boilerplate for new Google open source project'
-```
+## Examples
 
-## Source Code Headers
+Export to specified pprof profile using default options:
 
-Every file containing source code must include copyright and license
-information. This includes any JS/CSS files that you might be serving out to
-browsers. (This is to help well-intentioned people avoid accidental copying that
-doesn't comply with the license.)
+    EtwToPprof -o profile.pb.gz trace.etl
 
-Apache header:
+Export samples from specified process names:
 
-    Copyright 2021 Google LLC
+    EtwToPprof -p viz_perftests.exe,dwm.exe trace.etl
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Export samples from all processes from 10s to 30s:
 
-        https://www.apache.org/licenses/LICENSE-2.0
+    EtwToPprof -p * --timeEnd 30 --timeStart 10 trace.etl
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Export inlined functions and thread/process ids:
+
+    EtwToPprof --includeInlinedFunctions --includeProcessAndThreadIds trace.etl
+
+## Command line flags
+
+    -o, --outputFileName            (Default: profile.pb.gz) Output file name for gzipped pprof profile.
+
+    -p, --processFilter             (Default: chrome.exe,dwm.exe,audiodg.exe) Filter for process names (comma-separated) to be included in the exported profile. All processes will be exported if set to *.
+
+    --includeInlinedFunctions       (Default: false) Whether inlined functions should be included in the exported profile (slow).
+
+    --stripSourceFileNamePrefix     (Default: ^c:/b/s/w/ir/cache/builder/) Prefix regex to strip out of source file names in the exported profile.
+
+    --timeStart                     Start of time range to export in seconds
+
+    --timeEnd                       End of time range to export in seconds
+
+    --includeProcessIds             (Default: false) Whether process ids are included in the exported profile.
+
+    --includeProcessAndThreadIds    (Default: false) Whether process and thread ids are included in the exported profile.
+
+    --splitChromeProcesses          (Default: true) Whether chrome.exe processes are split by type (parsed from command line).
+
+    --loadSymbols                   (Default: true) Whether symbols should be loaded.
+
+    --help                          Display this help screen.
+
+    --version                       Display version information.
+
+    etlFileName (pos. 0)            Required. ETL trace file name.
+
+## Disclaimer:
+
+**This is not an officially supported Google product.**
