@@ -9,6 +9,8 @@ symbolizing traces if set, otherwise it uses WPA defaults.
 
 See this [blog post](https://blogs.windows.com/windowsdeveloper/2019/05/09/announcing-traceprocessor-preview-0-1-0/) for details of the Trace Processor package used to drive this.
 
+More explanations of the techniques used in this program can be found [here](https://randomascii.wordpress.com/2020/01/05/bulk-etw-trace-analysis-in-c/).
+
 ## Building
 
 Build the provided Visual Studio Solution with VS 2022.
