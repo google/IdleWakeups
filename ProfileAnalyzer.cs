@@ -59,13 +59,11 @@ namespace IdleWakeups
     public void AddSample(ICpuThreadActivity sample)
     {
       var contextSwitch = sample.SwitchIn.ContextSwitch;
-
       var timestamp = contextSwitch.Timestamp.RelativeTimestamp.TotalSeconds;
       if (timestamp < _options.TimeStart || timestamp > _options.TimeEnd)
       {
         return;
       }
-
       var switchInImageName = contextSwitch.SwitchIn.Process.ImageName;
       var switchOutImageName = contextSwitch.SwitchOut.Process.ImageName;
 
@@ -160,7 +158,7 @@ namespace IdleWakeups
       Console.WriteLine();
 
       // Append a list of reading processes next.
-      WriteHeader("Readying processes are:");
+      WriteHeader("Readying processes:");
 
       var composite = "{0,-25}{1}{2,6}";
       var sortedFilteredProcessReadyProcesses =
@@ -208,7 +206,9 @@ namespace IdleWakeups
 
       // Finally, show the main table summarizing the full Idle-wakeup distribution where thread
       // IDs for the filtered processes (default chrome.exe) act as keys.
-      WriteHeader($"Idle-wakeup (Idle -> {processFilter}) distribution with thread IDs as keys:");
+      WriteHeader($"Idle-wakeup (Idle -> {processFilter}) distribution with thread IDs (TIDs) as keys:");
+      Console.WriteLine("   Context switches where the readying thread is executing a deferred procedure call (DPC) are included in Count.");
+      Console.WriteLine();
 
       composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-12}{7}{8,-20}{9}{10,-55}{11}{12,6}{13}" +
                   "{14,9}{15}{16,6}{17}{18,7:F}{19}{20,7}";
@@ -216,8 +216,8 @@ namespace IdleWakeups
         "TID", sep,
         "PID", sep,
         "Process", sep,
-        "Type", sep,
-        "Subtype", sep,
+        "Chrome Type", sep,
+        "Chrome Subtype", sep,
         "Thread Name", sep,
         "Count", sep,
         "Count/sec", sep,
