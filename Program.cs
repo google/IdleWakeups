@@ -27,6 +27,7 @@ using CommandLine;
 using CommandLine.Text;
 
 using Microsoft.Windows.EventTracing;
+using Microsoft.Windows.EventTracing.Symbols;
 
 namespace IdleWakeups
 {
@@ -111,8 +112,8 @@ namespace IdleWakeups
 
         if (opts.loadSymbols ?? true)
         {
-          _ = pendingSymbolData.Result;
-          // symbolData.LoadSymbolsForConsoleAsync(SymCachePath.Automatic).GetAwaiter().GetResult();
+          var symbolData = pendingSymbolData.Result;
+          symbolData.LoadSymbolsForConsoleAsync(SymCachePath.Automatic).GetAwaiter().GetResult();
           Console.WriteLine();
         }
 
