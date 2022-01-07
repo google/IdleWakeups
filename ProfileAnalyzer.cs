@@ -209,7 +209,8 @@ namespace IdleWakeups
       // IDs for the filtered processes (default chrome.exe) act as keys.
       WriteHeader($"Idle-wakeup (Idle -> {processFilter}) distribution with thread IDs as keys:");
 
-      composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-12}{7}{8,-20}{9}{10,-55}{11}{12,6}{13}{14,9}{15}{16,6}{17}{18,7}";
+      composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-12}{7}{8,-20}{9}{10,-55}{11}{12,6}{13}" +
+                  "{14,9}{15}{16,6}{17}{18,7:F}{19}{20,7}";
       header = string.Format(composite,
         "TID", sep,
         "PID", sep,
@@ -220,6 +221,7 @@ namespace IdleWakeups
         "Count", sep,
         "Count/sec", sep,
         "DPC", sep,
+        "DPC (%)", sep,
         "DPC/sec");
       Console.WriteLine(header);
       WriteHeaderLine(header.Length + 1);
@@ -230,17 +232,20 @@ namespace IdleWakeups
           => y.Value.ContextSwitchCount.CompareTo(x.Value.ContextSwitchCount));
       foreach (var idleWakeup in sortedIdleWakeupsByThreadId)
       {
+        var value = idleWakeup.Value;
+        var dpcInPercent = 100 * value.ContextSwitchDPCCount / (double)value.ContextSwitchCount;
         Console.WriteLine(composite,
           idleWakeup.Key, sep,
-          idleWakeup.Value.ProcessId, sep,
-          idleWakeup.Value.ProcessName, sep,
-          idleWakeup.Value.ProcessType.Type, sep,
-          idleWakeup.Value.ProcessType.SubType, sep,
-          idleWakeup.Value.ThreadName, sep,
-          idleWakeup.Value.ContextSwitchCount, sep,
-          Math.Round(idleWakeup.Value.ContextSwitchCount / durationInSec, MidpointRounding.AwayFromZero), sep,
-          idleWakeup.Value.ContextSwitchDPCCount.ToString("#"), sep,
-          Math.Round(idleWakeup.Value.ContextSwitchDPCCount / durationInSec, MidpointRounding.AwayFromZero).ToString("#"));
+          value.ProcessId, sep,
+          value.ProcessName, sep,
+          value.ProcessType.Type, sep,
+          value.ProcessType.SubType, sep,
+          value.ThreadName, sep,
+          value.ContextSwitchCount, sep,
+          Math.Round(value.ContextSwitchCount / durationInSec, MidpointRounding.AwayFromZero), sep,
+          value.ContextSwitchDPCCount.ToString("#"), sep,
+          dpcInPercent > 0 ? dpcInPercent : "", sep,
+          Math.Round(value.ContextSwitchDPCCount / durationInSec, MidpointRounding.AwayFromZero).ToString("#"));
       }
 
       var totalContextSwitchCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount);
@@ -256,6 +261,7 @@ namespace IdleWakeups
         totalContextSwitchCount, sep,
         "", sep,
         totalContextSwitchDPCCount, sep,
+        "", sep,
         "");
     }
 
