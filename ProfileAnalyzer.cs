@@ -26,6 +26,7 @@ namespace IdleWakeups
       public decimal TimeEnd { get; set; }
       public HashSet<string> ProcessFilterSet { get; set; }
       public bool Tabbed { get; set; }
+      public bool Verbose { get; set; }
     }
 
     private struct IdleWakeup
