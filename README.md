@@ -45,6 +45,8 @@ Scan trace file and print summary for idle wakeups from all processes from 20s t
 
     -t, --tabbed            (Default: false) Print results as a tab-separated grid.
 
+    -v, --verboseOutput     (Default: false) Set output to verbose messages.
+
     --help                  Display this help screen.
 
     --version               Display version information.

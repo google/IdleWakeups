@@ -78,6 +78,10 @@ namespace IdleWakeups
       [Option('t', "tabbed", Required = false, Default = false, SetName = "cpu",
               HelpText = "Print results as a tab-separated grid.")]
       public bool printTabbed { get; set; }
+
+      [Option('v', "verboseOutput", Required = false, Default = false, SetName = "cpu",
+              HelpText = "Set output to verbose messages.")]
+      public bool verboseOutput { get; set; }
     }
 
     private static void Main(string[] args)
@@ -98,6 +102,12 @@ namespace IdleWakeups
         AllowLostEvents = true,
         SuppressFirstTimeSetupMessage = true
       };
+
+      var watch = new System.Diagnostics.Stopwatch();
+      if (opts.verboseOutput)
+      {
+        watch.Start();
+      }
 
       using (var trace = TraceProcessor.Create(opts.etlFileName, settings))
       {
@@ -152,6 +162,7 @@ namespace IdleWakeups
         profileOpts.TimeStart = opts.timeStart ?? 0;
         profileOpts.TimeEnd = opts.timeEnd ?? decimal.MaxValue;
         profileOpts.Tabbed = opts.printTabbed;
+        profileOpts.Verbose = opts.verboseOutput;
 
         var analyzeAllProcesses = opts.processFilter == "*";
         if (!analyzeAllProcesses)
@@ -173,7 +184,21 @@ namespace IdleWakeups
         {
           profileAnalyzer.WriteSummary();
         }
+
+        if (opts.verboseOutput)
+        {
+          watch.Stop();
+          WriteVerbose($"Execution time: {watch.ElapsedMilliseconds} ms");
+          Console.WriteLine();
+        }
       }
+    }
+
+    private static void WriteVerbose(string message)
+    {
+      Console.ForegroundColor = ConsoleColor.Green;
+      Console.WriteLine(message);
+      Console.ForegroundColor = ConsoleColor.White;
     }
   }
 }
