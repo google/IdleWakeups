@@ -13,6 +13,7 @@
 // limitations under the License.
 
 using Microsoft.Windows.EventTracing.Cpu;
+using Microsoft.Windows.EventTracing.Symbols;
 using System.Text;
 
 namespace IdleWakeups
@@ -37,6 +38,8 @@ namespace IdleWakeups
       public string ProcessName { get; set; }
       public ChromeProcessType ProcessType { get; set; }
       public string ThreadName { get; set; }
+      public Dictionary<string, StackFrames> ReadyThreadStacks { get; set; }
+      public Dictionary<string, StackFrames> NewThreadStacks { get; set; }
     }
 
     private struct ChromeProcessType
@@ -49,6 +52,13 @@ namespace IdleWakeups
       public string Type { get; set; }
 
       public string? SubType { get; set; }
+    }
+
+    private struct StackFrames
+    {
+      public long Count { get; set; }
+      public IReadOnlyList<StackFrame> Stack { get; set; }
+      public bool ReadyThreadInDPC { get; set; }
     }
 
     public ProfileAnalyzer(Options options)
@@ -77,13 +87,19 @@ namespace IdleWakeups
 
         _filteredProcessContextSwitch++;
 
+        // Is the thread switching in readied by a DPC?
+        // WPA: Ready Thread in DPC.
+        bool readyThreadInDPC = false;
+
         // Get the process that made this thread become eligible to be switched in, if available.
         var readyingProcessImageName = sample.ReadyingProcess?.ImageName ?? "Unknown";
         if (sample.ReadyThreadEvent?.IsExecutingDeferredProcedureCall ?? false)
         {
-          // If the readying thread is executing a deferred procedure call then the process is not
-          // relevant; it's just a temporary host for the DPC.
+          // If the readying thread is executing a deferred procedure it means that the thread was
+          // not readied by a process. It was readied by a DPC call (doing work on behalf of an
+          // interrupt) that has hijacked a process temporarily.
           readyingProcessImageName = "DPC";
+          readyThreadInDPC = true;
         }
         _filteredProcessReadyProcesses.TryGetValue(readyingProcessImageName, out long count);
         _filteredProcessReadyProcesses[readyingProcessImageName] = count + 1;
@@ -94,13 +110,29 @@ namespace IdleWakeups
 
           var switchInThreadId = contextSwitch.SwitchIn.ThreadId;
 
-          IdleWakeup iwakeup;
+          // The stack of the thread, if any, which readied (made eligible to run) the new thread.
+          // WPA: The stack for the thread that readied the thread switching in.
+          var readyThreadStackKey = sample.ReadyThreadStack?.GetAnalyzerString();
+          // Get the list of frames in the stack.
+          var readyThreadStackFrames = sample.ReadyThreadStack?.Frames;
+          Dictionary<string, StackFrames> readyThreadStacks = new();
+
+          // Stack of the thread switching in: the stack of the new thread, which is both where it
+          // resumes execution after the context switch, and where it was when its execution was
+          // suspended on an earlier context switch. This represents where the thread was waiting.
+          // WPA: New Thread Stack.
+          var newThreadStackKey = contextSwitch.SwitchIn.Stack.GetAnalyzerString();
+          // Get the list of frames in the stack.
+          var newThreadStackFrames = contextSwitch.SwitchIn.Stack?.Frames;
+          Dictionary<string, StackFrames> newThreadStacks = new();
+
+          IdleWakeup iwakeup = new IdleWakeup();
           if (!_idleWakeupsByThreadId.TryGetValue(switchInThreadId, out iwakeup))
           {
             // A new thread ID was found: update the context-switch counters and add the rest of the
             // information about the detected idle wakeup. These extra values are only stored once.
             iwakeup.ContextSwitchCount++;
-            if (readyingProcessImageName == "DPC")
+            if (readyThreadInDPC)
             {
               iwakeup.ContextSwitchDPCCount++;
             }
@@ -117,12 +149,40 @@ namespace IdleWakeups
           {
             // Thread ID already exists: only update the context-switch counters for this key.
             iwakeup.ContextSwitchCount++;
-            if (readyingProcessImageName == "DPC")
+            if (readyThreadInDPC)
             {
               iwakeup.ContextSwitchDPCCount++;
             }
           }
 
+          // TODO(henrika): add comments...
+          StackFrames stackFrames;
+          if (iwakeup.ReadyThreadStacks == null)
+          {
+            iwakeup.ReadyThreadStacks = new Dictionary<string, StackFrames>();
+          }
+          if (readyThreadStackKey != null && readyThreadStackFrames != null)
+          {
+            iwakeup.ReadyThreadStacks.TryGetValue(readyThreadStackKey, out stackFrames);
+            stackFrames.Count++;
+            stackFrames.Stack = readyThreadStackFrames;
+            iwakeup.ReadyThreadStacks[readyThreadStackKey] = stackFrames;
+          }
+
+          if (iwakeup.NewThreadStacks == null)
+          {
+            iwakeup.NewThreadStacks = new Dictionary<string, StackFrames>();
+          }
+          if (newThreadStackKey != null && newThreadStackFrames != null)
+          {
+            iwakeup.NewThreadStacks.TryGetValue(newThreadStackKey, out stackFrames);
+            stackFrames.Count++;
+            stackFrames.Stack = newThreadStackFrames;
+            iwakeup.NewThreadStacks[newThreadStackKey] = stackFrames;
+          }
+          
+          // Store all aquired information about the idle wakeup in a dictionary with thread ID
+          // as key and the IdleWakeup structure as value.
           _idleWakeupsByThreadId[switchInThreadId] = iwakeup;
 
           // Get the last C-State the processor went into when it was idle.
@@ -207,11 +267,11 @@ namespace IdleWakeups
       // Finally, show the main table summarizing the full Idle-wakeup distribution where thread
       // IDs for the filtered processes (default chrome.exe) act as keys.
       WriteHeader($"Idle-wakeup (Idle -> {processFilter}) distribution with thread IDs (TIDs) as keys:");
-      Console.WriteLine("   Context switches where the readying thread is executing a deferred procedure call (DPC) are included in Count.");
+      Console.WriteLine("Context switches where the readying thread is executing a deferred procedure call (DPC) are included in Count.");
       Console.WriteLine();
 
       composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-12}{7}{8,-20}{9}{10,-55}{11}{12,6}{13}" +
-                  "{14,9}{15}{16,6}{17}{18,7:F}{19}{20,7}";
+                  "{14,9}{15}{16,6}{17}{18,7:F}{19}{20,7}{21}{22,5}{23}{24,5}";
       header = string.Format(composite,
         "TID", sep,
         "PID", sep,
@@ -223,7 +283,9 @@ namespace IdleWakeups
         "Count/sec", sep,
         "DPC", sep,
         "DPC (%)", sep,
-        "DPC/sec");
+        "DPC/sec", sep,
+        "Ready", sep,
+        "New");
       Console.WriteLine(header);
       WriteHeaderLine(header.Length + 1);
 
@@ -246,11 +308,15 @@ namespace IdleWakeups
           Math.Round(value.ContextSwitchCount / durationInSec, MidpointRounding.AwayFromZero), sep,
           value.ContextSwitchDPCCount.ToString("#"), sep,
           dpcInPercent > 0 ? dpcInPercent : "", sep,
-          Math.Round(value.ContextSwitchDPCCount / durationInSec, MidpointRounding.AwayFromZero).ToString("#"));
+          Math.Round(value.ContextSwitchDPCCount / durationInSec, MidpointRounding.AwayFromZero).ToString("#"), sep,
+          value.ReadyThreadStacks.Count, sep,
+          value.NewThreadStacks.Count);
       }
 
       var totalContextSwitchCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount);
       var totalContextSwitchDPCCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchDPCCount);
+      var totalReadyThreadStacksCount = _idleWakeupsByThreadId.Sum(x => x.Value.ReadyThreadStacks.Count);
+      var totalNewThreadStacksCount = _idleWakeupsByThreadId.Sum(x => x.Value.NewThreadStacks.Count);
       WriteHeaderLine(header.Length + 1);
       Console.WriteLine(composite,
         "", sep,
@@ -263,7 +329,9 @@ namespace IdleWakeups
         "", sep,
         totalContextSwitchDPCCount, sep,
         "", sep,
-        "");
+        "", sep,
+        totalReadyThreadStacksCount, sep,
+        totalNewThreadStacksCount);
     }
 
     private ChromeProcessType GetChromeProcessType(string commandLine)
@@ -338,6 +406,15 @@ namespace IdleWakeups
         }
         Console.WriteLine(sb.ToString());
       }
+    }
+
+    private void WriteVerbose(string message)
+    {
+      if (!_options.Verbose)
+        return;
+      Console.ForegroundColor = ConsoleColor.Green;
+      Console.WriteLine(message);
+      Console.ForegroundColor = ConsoleColor.White;
     }
 
     private string ProcessFilterToString()
