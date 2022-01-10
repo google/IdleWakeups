@@ -1,4 +1,4 @@
-﻿// Copyright 2020 Google LLC
+﻿// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -40,6 +40,7 @@ namespace IdleWakeups
       public string ThreadName { get; set; }
       public Dictionary<string, StackFrames> ReadyThreadStacks { get; set; }
       public Dictionary<string, StackFrames> NewThreadStacks { get; set; }
+      // public Dictionary<string, StackFrames> NewThreadReadiedByDPCStacks { get; set; }
     }
 
     private struct ChromeProcessType
@@ -56,9 +57,9 @@ namespace IdleWakeups
 
     private struct StackFrames
     {
-      public long Count { get; set; }
+      public long StackCount { get; set; }
+      public long StackDPCCount { get; set; }
       public IReadOnlyList<StackFrame> Stack { get; set; }
-      public bool ReadyThreadInDPC { get; set; }
     }
 
     public ProfileAnalyzer(Options options)
@@ -68,12 +69,19 @@ namespace IdleWakeups
 
     public void AddSample(ICpuThreadActivity sample)
     {
+      // A context switch is the act of moving the New Thread from Ready to Running, and moving
+      // the Old Thread from Running to some other state, on a particular CPU. We are focusing on
+      // a special type of context switches, namely idle wakeups where the Old Thread is the idle
+      // thread.
       var contextSwitch = sample.SwitchIn.ContextSwitch;
+
+      // Ignore samples that are outside any given time interval.
       var timestamp = contextSwitch.Timestamp.RelativeTimestamp.TotalSeconds;
       if (timestamp < _options.TimeStart || timestamp > _options.TimeEnd)
       {
         return;
       }
+
       var switchInImageName = contextSwitch.SwitchIn.Process.ImageName;
       var switchOutImageName = contextSwitch.SwitchOut.Process.ImageName;
 
@@ -85,13 +93,11 @@ namespace IdleWakeups
         _wallTimeStart = Math.Min(_wallTimeStart, timestamp);
         _wallTimeEnd = Math.Max(_wallTimeEnd, timestamp);
 
+        // A context switch was detected but we don't yet know if it is an idle wakeup or not.
         _filteredProcessContextSwitch++;
 
-        // Is the thread switching in readied by a DPC?
-        // WPA: Ready Thread in DPC.
-        bool readyThreadInDPC = false;
-
         // Get the process that made this thread become eligible to be switched in, if available.
+        bool readyThreadInDPC = false;
         var readyingProcessImageName = sample.ReadyingProcess?.ImageName ?? "Unknown";
         if (sample.ReadyThreadEvent?.IsExecutingDeferredProcedureCall ?? false)
         {
@@ -106,27 +112,28 @@ namespace IdleWakeups
 
         if (switchOutImageName == "Idle")
         {
+          // This context switch fulfiles the conditions of being categorized as an idle wakeup.
+          // Note that more than one process can be included in the process filter but chrome.exe
+          // is default.
           _filteredProcessIdleContextSwitch++;
 
           var switchInThreadId = contextSwitch.SwitchIn.ThreadId;
+
+          // Stack of the thread switching in: the stack of the new thread, which is both where it
+          // resumes execution after the context switch, and where it was when its execution was
+          // suspended on an earlier context switch. This represents where the thread was waiting.
+          // WPA: New Thread Stack.
+          var newThreadStackKey = contextSwitch.SwitchIn.Stack?.GetAnalyzerString();
+          // Get the list of frames in the stack.
+          var newThreadStackFrames = contextSwitch.SwitchIn.Stack?.Frames;
 
           // The stack of the thread, if any, which readied (made eligible to run) the new thread.
           // WPA: The stack for the thread that readied the thread switching in.
           var readyThreadStackKey = sample.ReadyThreadStack?.GetAnalyzerString();
           // Get the list of frames in the stack.
           var readyThreadStackFrames = sample.ReadyThreadStack?.Frames;
-          Dictionary<string, StackFrames> readyThreadStacks = new();
 
-          // Stack of the thread switching in: the stack of the new thread, which is both where it
-          // resumes execution after the context switch, and where it was when its execution was
-          // suspended on an earlier context switch. This represents where the thread was waiting.
-          // WPA: New Thread Stack.
-          var newThreadStackKey = contextSwitch.SwitchIn.Stack.GetAnalyzerString();
-          // Get the list of frames in the stack.
-          var newThreadStackFrames = contextSwitch.SwitchIn.Stack?.Frames;
-          Dictionary<string, StackFrames> newThreadStacks = new();
-
-          IdleWakeup iwakeup = new IdleWakeup();
+          IdleWakeup iwakeup;
           if (!_idleWakeupsByThreadId.TryGetValue(switchInThreadId, out iwakeup))
           {
             // A new thread ID was found: update the context-switch counters and add the rest of the
@@ -142,6 +149,7 @@ namespace IdleWakeups
             iwakeup.ProcessName = switchInImageName;
             if (switchInImageName == "chrome.exe")
             {
+              // For chrome.exe, add process type and subtype in addition to the process name. 
               iwakeup.ProcessType = GetChromeProcessType(commandLine);
             }
           }
@@ -155,20 +163,10 @@ namespace IdleWakeups
             }
           }
 
-          // TODO(henrika): add comments...
+          // Next (still using thread ID as key), also add two dictionaries for the new thread stack
+          // and the readying thread stack using unique strings from GetAnalyzerString() as keys.
+          // For each key, store count and the a list of stack frames as value.
           StackFrames stackFrames;
-          if (iwakeup.ReadyThreadStacks == null)
-          {
-            iwakeup.ReadyThreadStacks = new Dictionary<string, StackFrames>();
-          }
-          if (readyThreadStackKey != null && readyThreadStackFrames != null)
-          {
-            iwakeup.ReadyThreadStacks.TryGetValue(readyThreadStackKey, out stackFrames);
-            stackFrames.Count++;
-            stackFrames.Stack = readyThreadStackFrames;
-            iwakeup.ReadyThreadStacks[readyThreadStackKey] = stackFrames;
-          }
-
           if (iwakeup.NewThreadStacks == null)
           {
             iwakeup.NewThreadStacks = new Dictionary<string, StackFrames>();
@@ -176,11 +174,31 @@ namespace IdleWakeups
           if (newThreadStackKey != null && newThreadStackFrames != null)
           {
             iwakeup.NewThreadStacks.TryGetValue(newThreadStackKey, out stackFrames);
-            stackFrames.Count++;
+            stackFrames.StackCount++;
+            if (readyThreadInDPC)
+            {
+              stackFrames.StackDPCCount++;
+            }
             stackFrames.Stack = newThreadStackFrames;
             iwakeup.NewThreadStacks[newThreadStackKey] = stackFrames;
           }
-          
+
+          if (iwakeup.ReadyThreadStacks == null)
+          {
+            iwakeup.ReadyThreadStacks = new Dictionary<string, StackFrames>();
+          }
+          if (readyThreadStackKey != null && readyThreadStackFrames != null)
+          {
+            iwakeup.ReadyThreadStacks.TryGetValue(readyThreadStackKey, out stackFrames);
+            stackFrames.StackCount++;
+            if (readyThreadInDPC)
+            {
+              stackFrames.StackDPCCount++;
+            }
+            stackFrames.Stack = readyThreadStackFrames;
+            iwakeup.ReadyThreadStacks[readyThreadStackKey] = stackFrames;
+          }
+
           // Store all aquired information about the idle wakeup in a dictionary with thread ID
           // as key and the IdleWakeup structure as value.
           _idleWakeupsByThreadId[switchInThreadId] = iwakeup;
@@ -194,7 +212,33 @@ namespace IdleWakeups
             cStateCount += 1;
             _previousCStates[prevCState.Value] = cStateCount;
           }
-        }
+
+          // Finally, store the two stacks (new and ready) once again but this time as two separate
+          // dictionaries (not as part of IdleWakeup) with thread ID as key. Instead, use the
+          // unique strings from GetAnalyzerString() as keys and map count and list of stack frames
+          // as value. This will give us the full/true distibution of callstacks since the one stored
+          // with thread ID may contain copies of the same stack frames.
+          if (newThreadStackKey != null && newThreadStackFrames != null)
+          {
+            _newThreadStacksByAnalyzerString.TryGetValue(newThreadStackKey, out stackFrames);
+            stackFrames.StackCount++;
+            if (readyThreadInDPC)
+            {
+              stackFrames.StackDPCCount++;
+            }
+            stackFrames.Stack = newThreadStackFrames;
+            _newThreadStacksByAnalyzerString[newThreadStackKey] = stackFrames;
+          }
+
+          if (readyThreadStackKey != null && readyThreadStackFrames != null)
+          {
+            _readyThreadStacksByAnalyzerString.TryGetValue(readyThreadStackKey, out stackFrames);
+            stackFrames.StackCount++;
+            stackFrames.Stack = readyThreadStackFrames;
+            _readyThreadStacksByAnalyzerString[readyThreadStackKey] = stackFrames;
+          }
+
+        }  // if (switchOutImageName == "Idle")
       }
     }
 
@@ -271,7 +315,7 @@ namespace IdleWakeups
       Console.WriteLine();
 
       composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-12}{7}{8,-20}{9}{10,-55}{11}{12,6}{13}" +
-                  "{14,9}{15}{16,6}{17}{18,7:F}{19}{20,7}{21}{22,5}{23}{24,5}";
+                  "{14,9}{15}{16,6}{17}{18,7:F}{19}{20,7}{21}{22,10}{23}{24,12}";
       header = string.Format(composite,
         "TID", sep,
         "PID", sep,
@@ -284,8 +328,8 @@ namespace IdleWakeups
         "DPC", sep,
         "DPC (%)", sep,
         "DPC/sec", sep,
-        "Ready", sep,
-        "New");
+        "New Stacks", sep,
+        "Ready Stacks");
       Console.WriteLine(header);
       WriteHeaderLine(header.Length + 1);
 
@@ -309,8 +353,8 @@ namespace IdleWakeups
           value.ContextSwitchDPCCount.ToString("#"), sep,
           dpcInPercent > 0 ? dpcInPercent : "", sep,
           Math.Round(value.ContextSwitchDPCCount / durationInSec, MidpointRounding.AwayFromZero).ToString("#"), sep,
-          value.ReadyThreadStacks.Count, sep,
-          value.NewThreadStacks.Count);
+          value.NewThreadStacks.Count, sep,
+          value.ReadyThreadStacks.Count);
       }
 
       var totalContextSwitchCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount);
@@ -330,8 +374,93 @@ namespace IdleWakeups
         totalContextSwitchDPCCount, sep,
         "", sep,
         "", sep,
-        totalReadyThreadStacksCount, sep,
-        totalNewThreadStacksCount);
+        totalNewThreadStacksCount, sep,
+        totalReadyThreadStacksCount);
+
+      const int threadId = 13972;
+
+      Console.WriteLine($"New Thread Stacks (TID={threadId})");
+      Console.WriteLine();
+
+      var newThreadStacks = _idleWakeupsByThreadId[threadId].NewThreadStacks;
+      foreach (var newThreadStack in newThreadStacks)
+      {
+        if (newThreadStack.Value.StackDPCCount == 0)
+          continue;
+        // Console.WriteLine(newThreadStack.Key);
+
+        Console.WriteLine("iwakeup:");
+        foreach (var entry in newThreadStack.Value.Stack)
+        {
+          var stackFrame = entry.GetAnalyzerString();
+          Console.WriteLine("        {0}", stackFrame);
+        }
+
+        Console.WriteLine("{0} {1}", newThreadStack.Value.StackCount, newThreadStack.Value.StackDPCCount);
+      }
+
+      Console.WriteLine();
+      Console.WriteLine($"Ready Thread Stacks (TID={threadId})");
+      Console.WriteLine();
+
+      var readyThreadStacks = _idleWakeupsByThreadId[threadId].ReadyThreadStacks;
+      foreach (var readyThreadStack in readyThreadStacks)
+      {
+        if (readyThreadStack.Value.StackDPCCount == 0)
+          continue;
+        // Console.WriteLine(readyThreadStack.Key);
+        Console.WriteLine("iwakeup:");
+        foreach (var entry in readyThreadStack.Value.Stack)
+        {
+          var stackFrame = entry.GetAnalyzerString();
+          Console.WriteLine("        {0}", stackFrame);
+        }
+        Console.WriteLine("{0} {1}", readyThreadStack.Value.StackCount, readyThreadStack.Value.StackDPCCount);
+      }
+
+      /*
+      const int maxPrinted = 10;
+
+      var sortedReadyThreadStacksByAnalyzerString =
+          new List<KeyValuePair<string, StackFrames>>(_readyThreadStacksByAnalyzerString);
+      sortedReadyThreadStacksByAnalyzerString.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
+      foreach (KeyValuePair<string, StackFrames> kvp in sortedReadyThreadStacksByAnalyzerString.Take(maxPrinted))
+      {
+        Console.WriteLine("iwakeup:");
+        foreach (var entry in kvp.Value.Stack)
+        {
+          try
+          {
+            var stackFrame = entry.GetAnalyzerString();
+            Console.WriteLine("        {0}", stackFrame);
+          }
+          catch (Exception ex)
+          {
+            // Console.WriteLine(ex.ToString());
+          }
+        }
+        Console.WriteLine("        {0}", kvp.Value.Count);
+      }
+      */
+
+      /*
+      // https://paste.googleplex.com/4931316148600832
+      var sortedNewThreadStacksByAnalyzerString =
+          new List<KeyValuePair<string, StackFrames>>(_newThreadStacksByAnalyzerString);
+      sortedNewThreadStacksByAnalyzerString.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
+      foreach (KeyValuePair<string, StackFrames> kvp in sortedNewThreadStacksByAnalyzerString.Take(maxPrinted))
+      {
+        Console.WriteLine("iwakeup:");
+        foreach (var entry in kvp.Value.Stack)
+        {
+          var stackFrame = entry.GetAnalyzerString();
+          Console.WriteLine("        {0}", stackFrame);
+        }
+        Console.WriteLine("        {0}", kvp.Value.Count);
+      }
+      Console.WriteLine();
+      Console.WriteLine(_newThreadStacksByAnalyzerString.Count);
+      */
     }
 
     private ChromeProcessType GetChromeProcessType(string commandLine)
@@ -444,5 +573,9 @@ namespace IdleWakeups
     private Dictionary<string, long> _filteredProcessReadyProcesses = new();
 
     private Dictionary<int, long> _previousCStates = new();
+
+    private Dictionary<string, StackFrames> _readyThreadStacksByAnalyzerString = new();
+
+    private Dictionary<string, StackFrames> _newThreadStacksByAnalyzerString = new();
   }
 }
