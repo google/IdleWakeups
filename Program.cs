@@ -1,4 +1,4 @@
-﻿// Copyright 2020 Google LLC
+﻿// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,17 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
+//
 // Detects idle wakeups in Chrome in an ETW using TraceProcessing.
 // Explanations of the techniques can be found here:
 // https://randomascii.wordpress.com/2020/01/05/bulk-etw-trace-analysis-in-c/
-
+//
 // See this blog post for details of the Trace Processor package used to
 // drive this:
 // https://blogs.windows.com/windowsdeveloper/2019/05/09/announcing-traceprocessor-preview-0-1-0/
 // Note that this URL has changed once already, so caveat blog lector.
-
+//
 // See also https://randomascii.wordpress.com/2015/09/24/etw-central/ for more details.
+//
+// Comments are nomenclature follows the style used by WPA.
 
 using CommandLine;
 using CommandLine.Text;
@@ -68,8 +70,24 @@ namespace IdleWakeups
       public decimal? timeEnd { get; set; }
 
       [Option('s', "printSummary", Required = false, Default = false, SetName = "cpu",
-              HelpText = "Whether a summary shall be printed after the analysis is completed.")]
+              HelpText = "Whether a summary shall be written out after the analysis is completed.")]
       public bool printSummary { get; set; }
+
+      [Option('c', "printCallstacks", Required = false, Default = false, SetName = "cpu",
+              HelpText = "Whether idlewakeup callstacks shall be written out after the analysis is completed.")]
+      public bool printCallstacks { get; set; }
+
+      [Option("callstackThreadId", Required = false, Default = null, SetName = "cpu",
+              HelpText = "Use in combination with --printCallstacks to limit the output to only one thread ID.")]
+      public int? threadId { get; set; }
+
+      [Option("includeNewThreadStacks", Required = false, Default = true,
+              HelpText = "Whether New Thread Stacks are inlcuded when writing callstacks.")]
+      public bool includeNewThreadStacks { get; set; }
+
+      [Option("includeReadiedThreadStacks", Required = false, Default = false,
+              HelpText = "Whether Readied Thread Stacks are inlcuded when writing callstacks.")]
+      public bool includeReadiedThreadStacks { get; set; }
 
       [Option("loadSymbols", Required = false, Default = true, SetName = "cpu",
               HelpText = "Whether symbols should be loaded.")]
