@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+using System.Text;
 using Microsoft.Windows.EventTracing.Cpu;
 using Microsoft.Windows.EventTracing.Symbols;
-using System.Text;
 
 namespace IdleWakeups
 {
@@ -377,7 +377,7 @@ namespace IdleWakeups
         totalNewThreadStacksCount, sep,
         totalReadyThreadStacksCount);
 
-      const int threadId = 13972;
+      const int threadId = 4860;
 
       Console.WriteLine($"New Thread Stacks (TID={threadId})");
       Console.WriteLine();
