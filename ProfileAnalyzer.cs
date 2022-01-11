@@ -96,8 +96,9 @@ namespace IdleWakeups
         _filteredProcessContextSwitch++;
 
         // Get the process that made this thread become eligible to be switched in, if available.
-        bool readyingThreadInDPC = false;
         var readyingProcessImageName = sample.ReadyingProcess?.ImageName ?? "Unknown";
+        // Was the new thread perhaps readied by a DPC?
+        bool readyingThreadInDPC = false;
         if (sample.ReadyThreadEvent?.IsExecutingDeferredProcedureCall ?? false)
         {
           // If the readying thread is executing a deferred procedure it means that the thread was
@@ -126,7 +127,7 @@ namespace IdleWakeups
           // Get the list of frames in the stack.
           var readiedThreadStackFrames = contextSwitch.SwitchIn.Stack?.Frames;
 
-          // The stack of the thread, if any, which readied (made eligible to run) the new thread.
+          // The stack of the thread, if any, which was readying (made eligible to run) the new thread.
           // WPA: The stack for the thread that readied the thread switching in.
           var readyingThreadStackKey = sample.ReadyThreadStack?.GetAnalyzerString();
           // Get the list of frames in the stack.
@@ -162,9 +163,10 @@ namespace IdleWakeups
             }
           }
 
-          // Next (still using thread ID as key), also add two dictionaries for the new thread stack
-          // and the readying thread stack using unique strings from GetAnalyzerString() as keys.
-          // For each key, store count and the a list of stack frames as value.
+          // Next (still using thread ID as key), also add two dictionaries for the new/readied
+          // thread stack and the readying thread stack using unique strings from
+          // GetAnalyzerString() as keys. For each key, store count and the a list of stack frames
+          // as value.
           StackFrames stackFrames;
           if (iwakeup.ReadiedThreadStacks == null)
           {
@@ -212,7 +214,7 @@ namespace IdleWakeups
             _previousCStates[prevCState.Value] = cStateCount;
           }
 
-          // Finally, store the two stacks (readied and readying) once again but this time as two
+          // Finally, store the two stacks (readied/new and readying) once again but this time as
           // separate dictionaries (not as part of IdleWakeup) with thread ID as key. Instead, use
           // the unique strings from GetAnalyzerString() as keys and map count and list of stack
           // frames as value. This will give us the full/true distibution of callstacks since the
@@ -375,95 +377,6 @@ namespace IdleWakeups
         "", sep,
         totalReadiedThreadStacksCount, sep,
         totalReadyingThreadStacksCount);
-
-      /*
-
-      const int threadId = 4860;
-
-      Console.WriteLine($"New Thread Stacks (TID={threadId})");
-      Console.WriteLine();
-
-      var readiedThreadStacks = _idleWakeupsByThreadId[threadId].ReadiedThreadStacks;
-      foreach (var readiedThreadStack in readiedThreadStacks)
-      {
-        if (readiedThreadStack.Value.StackDPCCount == 0)
-          continue;
-        // Console.WriteLine(newThreadStack.Key);
-
-        Console.WriteLine("iwakeup:");
-        foreach (var entry in readiedThreadStack.Value.Stack)
-        {
-          var stackFrame = entry.GetAnalyzerString();
-          Console.WriteLine("        {0}", stackFrame);
-        }
-
-        Console.WriteLine("{0} {1}", readiedThreadStack.Value.StackCount, readiedThreadStack.Value.StackDPCCount);
-      }
-
-      Console.WriteLine();
-      Console.WriteLine($"Ready Thread Stacks (TID={threadId})");
-      Console.WriteLine();
-
-      var readyingThreadStacks = _idleWakeupsByThreadId[threadId].ReadyingThreadStacks;
-      foreach (var readyingThreadStack in readyingThreadStacks)
-      {
-        if (readyingThreadStack.Value.StackDPCCount == 0)
-          continue;
-        // Console.WriteLine(readyThreadStack.Key);
-        Console.WriteLine("iwakeup:");
-        foreach (var entry in readyingThreadStack.Value.Stack)
-        {
-          var stackFrame = entry.GetAnalyzerString();
-          Console.WriteLine("        {0}", stackFrame);
-        }
-        Console.WriteLine("{0} {1}", readyingThreadStack.Value.StackCount, readyingThreadStack.Value.StackDPCCount);
-      }
-
-      */
-
-      /*
-      const int maxPrinted = 10;
-
-      var sortedReadyThreadStacksByAnalyzerString =
-          new List<KeyValuePair<string, StackFrames>>(_readyThreadStacksByAnalyzerString);
-      sortedReadyThreadStacksByAnalyzerString.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
-      foreach (KeyValuePair<string, StackFrames> kvp in sortedReadyThreadStacksByAnalyzerString.Take(maxPrinted))
-      {
-        Console.WriteLine("iwakeup:");
-        foreach (var entry in kvp.Value.Stack)
-        {
-          try
-          {
-            var stackFrame = entry.GetAnalyzerString();
-            Console.WriteLine("        {0}", stackFrame);
-          }
-          catch (Exception ex)
-          {
-            // Console.WriteLine(ex.ToString());
-          }
-        }
-        Console.WriteLine("        {0}", kvp.Value.Count);
-      }
-      */
-
-      /*
-      // https://paste.googleplex.com/4931316148600832
-      var sortedNewThreadStacksByAnalyzerString =
-          new List<KeyValuePair<string, StackFrames>>(_newThreadStacksByAnalyzerString);
-      sortedNewThreadStacksByAnalyzerString.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
-      foreach (KeyValuePair<string, StackFrames> kvp in sortedNewThreadStacksByAnalyzerString.Take(maxPrinted))
-      {
-        Console.WriteLine("iwakeup:");
-        foreach (var entry in kvp.Value.Stack)
-        {
-          var stackFrame = entry.GetAnalyzerString();
-          Console.WriteLine("        {0}", stackFrame);
-        }
-        Console.WriteLine("        {0}", kvp.Value.Count);
-      }
-      Console.WriteLine();
-      Console.WriteLine(_newThreadStacksByAnalyzerString.Count);
-      */
     }
 
     private ChromeProcessType GetChromeProcessType(string commandLine)
@@ -582,3 +495,99 @@ namespace IdleWakeups
     private Dictionary<string, StackFrames> _readiedThreadStacksByAnalyzerString = new();
   }
 }
+
+/* ----- snippets
+ 
+ const int threadId = 13972;
+
+      Console.WriteLine($"New Thread Stacks (TID={threadId})");
+      Console.WriteLine();
+
+      long sum = 0;
+      long sumd = 0;
+      var readiedThreadStacks = _idleWakeupsByThreadId[threadId].ReadiedThreadStacks;
+      foreach (var readiedThreadStack in readiedThreadStacks)
+      {
+        // if (readiedThreadStack.Value.StackDPCCount == 0)
+        //  continue;
+        // Console.WriteLine(newThreadStack.Key);
+
+        // Console.WriteLine("iwakeup:");
+                // foreach (var entry in readiedThreadStack.Value.Stack)
+                // {
+                // var stackFrame = entry.GetAnalyzerString();
+                // Console.WriteLine("        {0}", stackFrame);
+                // }
+
+        Console.WriteLine("{0} {1}", readiedThreadStack.Value.StackCount, readiedThreadStack.Value.StackDPCCount);
+        // Console.WriteLine("{0}", readiedThreadStack.Value.StackCount);
+        sum += readiedThreadStack.Value.StackCount;
+        sumd += readiedThreadStack.Value.StackDPCCount;
+      }
+      Console.WriteLine("Total: {0} {1}", sum, sumd);
+
+      Console.WriteLine();
+      Console.WriteLine($"Ready Thread Stacks (TID={threadId})");
+      Console.WriteLine();
+
+      sum = 0;
+      sumd = 0;
+      var readyingThreadStacks = _idleWakeupsByThreadId[threadId].ReadyingThreadStacks;
+      foreach (var readyingThreadStack in readyingThreadStacks)
+      {
+        // if (readyingThreadStack.Value.StackDPCCount == 0)
+        //  continue;
+        // Console.WriteLine(readyThreadStack.Key);
+        // Console.WriteLine("iwakeup:");
+                //foreach (var entry in readyingThreadStack.Value.Stack)
+                //{
+                //  var stackFrame = entry.GetAnalyzerString();
+                //  Console.WriteLine("        {0}", stackFrame);
+                //}
+        Console.WriteLine("{0} {1}", readyingThreadStack.Value.StackCount, readyingThreadStack.Value.StackDPCCount);
+        // Console.WriteLine("{0}", readyingThreadStack.Value.StackCount);
+        sum += readyingThreadStack.Value.StackCount;
+        sumd += readyingThreadStack.Value.StackDPCCount;
+      }
+      Console.WriteLine("Total: {0} {1}", sum, sumd);
+
+      const int maxPrinted = 10;
+
+      var sortedReadyThreadStacksByAnalyzerString =
+          new List<KeyValuePair<string, StackFrames>>(_readyThreadStacksByAnalyzerString);
+      sortedReadyThreadStacksByAnalyzerString.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
+      foreach (KeyValuePair<string, StackFrames> kvp in sortedReadyThreadStacksByAnalyzerString.Take(maxPrinted))
+      {
+        Console.WriteLine("iwakeup:");
+        foreach (var entry in kvp.Value.Stack)
+        {
+          try
+          {
+            var stackFrame = entry.GetAnalyzerString();
+            Console.WriteLine("        {0}", stackFrame);
+          }
+          catch (Exception ex)
+          {
+            // Console.WriteLine(ex.ToString());
+          }
+        }
+        Console.WriteLine("        {0}", kvp.Value.Count);
+      }
+
+ https://paste.googleplex.com/4931316148600832
+var sortedNewThreadStacksByAnalyzerString =
+    new List<KeyValuePair<string, StackFrames>>(_newThreadStacksByAnalyzerString);
+sortedNewThreadStacksByAnalyzerString.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
+foreach (KeyValuePair<string, StackFrames> kvp in sortedNewThreadStacksByAnalyzerString.Take(maxPrinted))
+{
+  Console.WriteLine("iwakeup:");
+  foreach (var entry in kvp.Value.Stack)
+  {
+    var stackFrame = entry.GetAnalyzerString();
+    Console.WriteLine("        {0}", stackFrame);
+  }
+  Console.WriteLine("        {0}", kvp.Value.Count);
+}
+Console.WriteLine();
+Console.WriteLine(_newThreadStacksByAnalyzerString.Count);
+*/
