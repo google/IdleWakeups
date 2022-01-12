@@ -18,6 +18,8 @@ Build the provided Visual Studio Solution with VS 2022.
 ### NuGet dependencies (included in solution)
 - [CommandLineParser v2.8.0](https://www.nuget.org/packages/CommandLineParser/2.8.0)
 - [Microsoft.Windows.EventTracing.Processing.All v1.9.2](https://www.nuget.org/packages/Microsoft.Windows.EventTracing.Processing.All/1.9.2)
+- [Google.Protobuf v3.19.3](https://www.nuget.org/packages/Google.Protobuf/3.19.3)
+- [Google.Protobuf.Tools v3.19.3](https://www.nuget.org/packages/Google.Protobuf.Tools/3.19.3)
 
 ## Examples
 
