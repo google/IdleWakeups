@@ -377,6 +377,31 @@ namespace IdleWakeups
         "", sep,
         totalReadiedThreadStacksCount, sep,
         totalReadyingThreadStacksCount);
+
+      const int threadId = 13972;
+
+      Console.WriteLine($"New Thread Stacks (TID={threadId})");
+      Console.WriteLine();
+
+      var readiedThreadStacks = _idleWakeupsByThreadId[threadId].ReadiedThreadStacks;
+      foreach (var readiedThreadStack in readiedThreadStacks)
+      {
+        if (readiedThreadStack.Value.StackDPCCount == 0)
+          continue;
+        // Console.WriteLine(readiedThreadStack.Key);
+
+        Console.WriteLine("iwakeup:");
+        foreach (var entry in readiedThreadStack.Value.Stack)
+        {
+          var stackFrame = entry.GetDebuggerString();
+          Console.WriteLine("        {0}", stackFrame);
+        }
+
+        Console.WriteLine("{0} {1}", readiedThreadStack.Value.StackCount, readiedThreadStack.Value.StackDPCCount);
+        // Console.WriteLine("{0}", readiedThreadStack.Value.StackCount);
+        // sum += readiedThreadStack.Value.StackCount;
+        // sumd += readiedThreadStack.Value.StackDPCCount;
+      }
     }
 
     private ChromeProcessType GetChromeProcessType(string commandLine)
