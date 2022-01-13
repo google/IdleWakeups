@@ -12,9 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-using System.Text;
+using Google.Protobuf;
+
+using Microsoft.Windows.EventTracing;
 using Microsoft.Windows.EventTracing.Cpu;
 using Microsoft.Windows.EventTracing.Symbols;
+
+using pb = Perftools.Profiles;
+
+using System.IO.Compression;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace IdleWakeups
 {
@@ -61,9 +69,93 @@ namespace IdleWakeups
       public IReadOnlyList<StackFrame> Stack { get; set; }
     }
 
+    readonly struct Location
+    {
+      public Location(int processId, string imagePath, Address? functionAddress, string functionName)
+      {
+        ProcessId = processId;
+        ImagePath = imagePath;
+        FunctionAddress = functionAddress;
+        FunctionName = functionName;
+      }
+      int ProcessId { get; }
+      string ImagePath { get; }
+      Address? FunctionAddress { get; }
+      string FunctionName { get; }
+
+      public override bool Equals(object? other)
+      {
+        return other is Location location &&
+               ProcessId == location.ProcessId &&
+               ImagePath == location.ImagePath &&
+               EqualityComparer<Address?>.Default.Equals(FunctionAddress, location.FunctionAddress) &&
+               FunctionName == location.FunctionName;
+      }
+
+      public override int GetHashCode()
+      {
+        // return (ProcessId, ImagePath, FunctionAddress, FunctionName).GetHashCode();
+        return HashCode.Combine(ProcessId, ImagePath, FunctionAddress, FunctionName);
+      }
+    }
+
+    readonly struct Function
+    {
+      public Function(string imageName, string functionName)
+      {
+        ImageName = imageName;
+        FunctionName = functionName;
+      }
+      string ImageName { get; }
+      string FunctionName { get; }
+
+      public override bool Equals(object? other)
+      {
+        return other is Function function &&
+               ImageName == function.ImageName &&
+               FunctionName == function.FunctionName;
+      }
+
+      public override int GetHashCode()
+      {
+        return HashCode.Combine(ImageName, FunctionName);
+      }
+
+      public override string ToString()
+      {
+        return String.Format("{0}!{1}", ImageName, FunctionName);
+      }
+    }
+
     public ProfileAnalyzer(Options options)
     {
       _options = options;
+
+      // TODO(henrika): add to options
+      const string stripSourceFileNamePrefix = @"^c:/b/s/w/ir/cache/builder/";
+      _stripSourceFileNamePrefixRegex = new Regex(stripSourceFileNamePrefix,
+                                                  RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+      _strings = new Dictionary<string, long>();
+      _strings.Add("", 0);
+      _nextStringId = 1;
+      _profile.StringTable.Add("");
+
+      _locations = new Dictionary<Location, ulong>();
+      _nextLocationId = 1;
+
+      _functions = new Dictionary<Function, ulong>();
+      _nextFunctionId = 1;
+
+      var iWakeupCountValueType = new pb.ValueType();
+      iWakeupCountValueType.Type = GetStringId("readied stacks");
+      iWakeupCountValueType.Unit = GetStringId("count");
+      _profile.SampleType.Add(iWakeupCountValueType);
+
+      iWakeupCountValueType = new pb.ValueType();
+      iWakeupCountValueType.Type = GetStringId("readying stacks");
+      iWakeupCountValueType.Unit = GetStringId("count");
+      _profile.SampleType.Add(iWakeupCountValueType);
     }
 
     public void AddSample(ICpuThreadActivity sample)
@@ -86,7 +178,7 @@ namespace IdleWakeups
 
       // Check if all processes shall be analyzed when switched in (filter set to '*') or if a
       // filter has been set (e.g. 'chrome.exe') and it contains the process name switching in.
-      if (_options.ProcessFilterSet == null ||
+      if (_options.ProcessFilterSet is null ||
           _options.ProcessFilterSet.Contains(switchInImageName))
       {
         _wallTimeStart = Math.Min(_wallTimeStart, timestamp);
@@ -168,11 +260,11 @@ namespace IdleWakeups
           // GetAnalyzerString() as keys. For each key, store count and the a list of stack frames
           // as value.
           StackFrames stackFrames;
-          if (iwakeup.ReadiedThreadStacks == null)
+          if (iwakeup.ReadiedThreadStacks is null)
           {
             iwakeup.ReadiedThreadStacks = new Dictionary<string, StackFrames>();
           }
-          if (readiedThreadStackKey != null && readiedThreadStackFrames != null)
+          if (readiedThreadStackKey is not null && readiedThreadStackFrames is not null)
           {
             iwakeup.ReadiedThreadStacks.TryGetValue(readiedThreadStackKey, out stackFrames);
             stackFrames.StackCount++;
@@ -184,11 +276,11 @@ namespace IdleWakeups
             iwakeup.ReadiedThreadStacks[readiedThreadStackKey] = stackFrames;
           }
 
-          if (iwakeup.ReadyingThreadStacks == null)
+          if (iwakeup.ReadyingThreadStacks is null)
           {
             iwakeup.ReadyingThreadStacks = new Dictionary<string, StackFrames>();
           }
-          if (readyingThreadStackKey != null && readyingThreadStackFrames != null)
+          if (readyingThreadStackKey is not null && readyingThreadStackFrames is not null)
           {
             iwakeup.ReadyingThreadStacks.TryGetValue(readyingThreadStackKey, out stackFrames);
             stackFrames.StackCount++;
@@ -219,7 +311,7 @@ namespace IdleWakeups
           // the unique strings from GetAnalyzerString() as keys and map count and list of stack
           // frames as value. This will give us the full/true distibution of callstacks since the
           // one stored with thread ID may contain copies of the same stack frames.
-          if (readiedThreadStackKey != null && readiedThreadStackFrames != null)
+          if (readiedThreadStackKey is not null && readiedThreadStackFrames is not null)
           {
             _readiedThreadStacksByAnalyzerString.TryGetValue(readiedThreadStackKey, out stackFrames);
             stackFrames.StackCount++;
@@ -231,7 +323,7 @@ namespace IdleWakeups
             _readiedThreadStacksByAnalyzerString[readiedThreadStackKey] = stackFrames;
           }
 
-          if (readyingThreadStackKey != null && readyingThreadStackFrames != null)
+          if (readyingThreadStackKey is not null && readyingThreadStackFrames is not null)
           {
             _readyingThreadStacksByAnalyzerString.TryGetValue(readyingThreadStackKey, out stackFrames);
             stackFrames.StackCount++;
@@ -377,31 +469,268 @@ namespace IdleWakeups
         "", sep,
         totalReadiedThreadStacksCount, sep,
         totalReadyingThreadStacksCount);
+    }
 
-      const int threadId = 13972;
-
-      Console.WriteLine($"New Thread Stacks (TID={threadId})");
-      Console.WriteLine();
-
-      var readiedThreadStacks = _idleWakeupsByThreadId[threadId].ReadiedThreadStacks;
-      foreach (var readiedThreadStack in readiedThreadStacks)
+    /*
+      profile.Comment.Add(GetStringId($"Converted by EtwToPprof from {Path.GetFileName(options.etlFileName)}"));
+      if (wallTimeStart < wallTimeEnd)
       {
-        if (readiedThreadStack.Value.StackDPCCount == 0)
-          continue;
-        // Console.WriteLine(readiedThreadStack.Key);
+        decimal wallTimeMs = (wallTimeEnd - wallTimeStart) * 1000;
+        profile.Comment.Add(GetStringId($"Wall time {wallTimeMs:F} ms"));
+        profile.Comment.Add(GetStringId($"CPU time {totalCpuTime:F} ms ({totalCpuTime / wallTimeMs:P})"));
 
-        Console.WriteLine("iwakeup:");
-        foreach (var entry in readiedThreadStack.Value.Stack)
+        var sortedProcesses = processCpuTimes.Keys.ToList();
+        sortedProcesses.Sort((a, b) => -processCpuTimes[a].CompareTo(processCpuTimes[b]));
+
+        foreach (var processLabel in sortedProcesses)
         {
-          var stackFrame = entry.GetDebuggerString();
+          decimal processCpuTime = processCpuTimes[processLabel];
+          profile.Comment.Add(GetStringId($"  {processLabel} {processCpuTime:F} ms ({processCpuTime / wallTimeMs:P})"));
+
+          var threadCpuTimes = processThreadCpuTimes[processLabel];
+
+          var sortedThreads = threadCpuTimes.Keys.ToList();
+          sortedThreads.Sort((a, b) => -threadCpuTimes[a].CompareTo(threadCpuTimes[b]));
+
+          foreach (var threadLabel in sortedThreads)
+          {
+            var threadCpuTime = threadCpuTimes[threadLabel];
+            profile.Comment.Add(GetStringId($"    {threadLabel} {threadCpuTime:F} ms ({threadCpuTime / wallTimeMs:P})"));
+          }
+        }
+      }
+      else
+      {
+        profile.Comment.Add(GetStringId("No samples exported"));
+      }
+      using (FileStream output = File.Create(outputFileName))
+      {
+        using (GZipStream gzip = new GZipStream(output, CompressionMode.Compress))
+        {
+          using (CodedOutputStream serialized = new CodedOutputStream(gzip))
+          {
+            profile.WriteTo(serialized);
+            return output.Length;
+          }
+        }
+      }
+     */
+
+    public long WritePprof(string outputFileName)
+    {
+      if (_wallTimeStart < _wallTimeEnd)
+      {
+        var durationMs = (_wallTimeEnd - _wallTimeStart) * 1000;
+        _profile.Comment.Add(GetStringId($"Duration (msec): {durationMs:F}"));
+      }
+      else
+      {
+        _profile.Comment.Add(GetStringId("No samples exported"));
+      }
+      const int numStacks = 10;
+      var sortedReadiedThreadStacksByAnalyzerString =
+           new List<KeyValuePair<string, StackFrames>>(_readiedThreadStacksByAnalyzerString);
+      sortedReadiedThreadStacksByAnalyzerString.Sort((x, y) => y.Value.StackCount.CompareTo(x.Value.StackCount));
+      /*
+      foreach (KeyValuePair<string, StackFrames> kvp in sortedReadiedThreadStacksByAnalyzerString.Take(numStacks))
+      {
+        Console.WriteLine("iwakeup:");
+        foreach (var entry in kvp.Value.Stack)
+        {
+          var stackFrame = entry.GetAnalyzerString();
           Console.WriteLine("        {0}", stackFrame);
         }
+        Console.WriteLine("        {0}", kvp.Value.StackCount);
+      }*/
 
-        Console.WriteLine("{0} {1}", readiedThreadStack.Value.StackCount, readiedThreadStack.Value.StackDPCCount);
-        // Console.WriteLine("{0}", readiedThreadStack.Value.StackCount);
-        // sum += readiedThreadStack.Value.StackCount;
-        // sumd += readiedThreadStack.Value.StackDPCCount;
+      foreach (KeyValuePair<string, StackFrames> kvp in sortedReadiedThreadStacksByAnalyzerString.Take(numStacks))
+      {
+        var sampleProto = new pb.Sample();
+        sampleProto.Value.Add(kvp.Value.StackCount);
+        sampleProto.Value.Add(0);
+        var stackFrames = kvp.Value.Stack;
+
+        if (stackFrames.Count == 0)
+        {
+          continue;
+        }
+
+        foreach (var stackFrame in stackFrames)
+        {
+          if (stackFrame.HasValue && stackFrame.Symbol is not null)
+          {
+            sampleProto.LocationId.Add(GetLocationId(stackFrame.Symbol));
+          }
+          else
+          {
+            // TODO(henrika): improve...
+            Console.Error.WriteLine("Invalid stackFrame");
+          }
+        }
+
+        _profile.Sample.Add(sampleProto);
       }
+
+      Console.WriteLine();
+
+      var sortedReadyingThreadStacksByAnalyzerString =
+          new List<KeyValuePair<string, StackFrames>>(_readyingThreadStacksByAnalyzerString);
+      sortedReadyingThreadStacksByAnalyzerString.Sort((x, y) => y.Value.StackCount.CompareTo(x.Value.StackCount));
+      /*
+      foreach (KeyValuePair<string, StackFrames> kvp in sortedReadyingThreadStacksByAnalyzerString.Take(numStacks))
+      {
+        Console.WriteLine("iwakeup:");
+        foreach (var entry in kvp.Value.Stack)
+        {
+          var stackFrame = entry.GetAnalyzerString();
+          Console.WriteLine("        {0}", stackFrame);
+        }
+        Console.WriteLine("        {0}", kvp.Value.StackCount);
+      }*/
+
+      foreach (KeyValuePair<string, StackFrames> kvp in sortedReadyingThreadStacksByAnalyzerString.Take(numStacks))
+      {
+        var sampleProto = new pb.Sample();
+        sampleProto.Value.Add(0);
+        sampleProto.Value.Add(kvp.Value.StackCount);
+        var stackFrames = kvp.Value.Stack;
+
+        if (stackFrames.Count == 0)
+        {
+          continue;
+        }
+
+        foreach (var stackFrame in stackFrames)
+        {
+          if (stackFrame.HasValue && stackFrame.Symbol is not null)
+          {
+            sampleProto.LocationId.Add(GetLocationId(stackFrame.Symbol));
+          }
+          else
+          {
+            // TODO(henrika): improve...
+            Console.Error.WriteLine("Invalid stackFrame");
+          }
+        }
+
+        _profile.Sample.Add(sampleProto);
+      }
+
+      _profile.Comment.Add(GetStringId($"Exported by IdleWakeups from {Path.GetFileName(outputFileName)}"));
+
+      using (FileStream output = File.Create(outputFileName))
+      {
+        using (GZipStream gzip = new GZipStream(output, CompressionMode.Compress))
+        {
+          using (CodedOutputStream serialized = new CodedOutputStream(gzip))
+          {
+            _profile.WriteTo(serialized);
+            return output.Length;
+          }
+        }
+      }
+    }
+
+    // string_table: All strings in the profile are represented as indices into this repeating
+    // field. The first string is empty, so index == 0 always represents the empty string.
+    private long GetStringId(string str)
+    {
+      long stringId;
+      if (!_strings.TryGetValue(str, out stringId))
+      {
+        stringId = _nextStringId++;
+        _strings.Add(str, stringId);
+        _profile.StringTable.Add(str);
+      }
+      return stringId;
+    }
+
+    // Location: A unique place in the program, commonly mapped to a single instruction address.
+    // It has a unique nonzero id, to be referenced from the samples. It contains source information
+    // in the form of lines, and a mapping id that points to a binary.
+    private ulong GetLocationId(IStackSymbol stackSymbol)
+    {
+      if (stackSymbol.Image is null)
+      {
+        // TODO(henrika): improve
+        Console.Error.WriteLine("Invalid stack symbol image");
+        return 0;
+      }
+
+      var processId = stackSymbol.Image.ProcessId;
+      var imagePath = stackSymbol.Image.Path;
+      var functionAddress = stackSymbol.AddressRange.BaseAddress;
+      var functionName = stackSymbol.FunctionName;
+      
+      var location = new Location(processId, imagePath, functionAddress, functionName);
+
+      ulong locationId;
+      if (!_locations.TryGetValue(location, out locationId))
+      {
+        locationId = _nextLocationId++;
+        _locations.Add(location, locationId);
+
+        var locationProto = new pb.Location();
+        locationProto.Id = locationId;
+
+        pb.Line line;
+
+        /* TODO(henrika)
+        if (options.includeInlinedFunctions && stackSymbol.InlinedFunctionNames != null)
+        {
+          foreach (var inlineFunctionName in stackSymbol.InlinedFunctionNames)
+          {
+            line = new pb.Line();
+            line.FunctionId = GetFunctionId(imageName, inlineFunctionName);
+            locationProto.Line.Add(line);
+          }
+        }
+        */
+
+        var imageName = stackSymbol.Image.FileName;
+        var sourceFileName = stackSymbol.SourceFileName;
+
+        line = new pb.Line();
+        line.FunctionId = GetFunctionId(imageName, functionName, sourceFileName);
+        line.Line_ = stackSymbol.SourceLineNumber;
+        locationProto.Line.Add(line);
+        _profile.Location.Add(locationProto);
+      }
+      return locationId;
+    }
+
+    // Function: A program function as defined in the program source. It has a unique nonzero id,
+    // referenced from the location lines. It contains a human-readable name for the function
+    // (eg a C++ demangled name), a system name (eg a C++ mangled name), the name of the
+    // corresponding source file, and other function attributes.
+    private ulong GetFunctionId(string imageName, string functionName, string sourceFileName = null!)
+    {
+      ulong functionId;
+      var function = new Function(imageName, functionName);
+      if (!_functions.TryGetValue(function, out functionId))
+      {
+        var functionProto = new pb.Function();
+        functionProto.Id = _nextFunctionId++;
+        functionProto.Name = GetStringId(functionName ?? function.ToString());
+        functionProto.SystemName = GetStringId(function.ToString());
+        if (sourceFileName is null)
+        {
+          sourceFileName = imageName;
+        }
+        else
+        {
+          // Example: C:\b\s\w\ir\cache\builder\src\base\threading\thread.cc =>
+          //          src/base/threading/thread.cc
+          sourceFileName = sourceFileName.Replace('\\', '/');
+          sourceFileName = _stripSourceFileNamePrefixRegex.Replace(sourceFileName, "");
+        }
+        functionProto.Filename = GetStringId(sourceFileName);
+
+        functionId = functionProto.Id;
+        _functions.Add(function, functionId);
+        _profile.Function.Add(functionProto);
+      }
+      return functionId;
     }
 
     private ChromeProcessType GetChromeProcessType(string commandLine)
@@ -500,28 +829,61 @@ namespace IdleWakeups
       return sb.ToString().TrimEnd();
     }
 
-    private readonly Options _options;
+    readonly Options _options;
 
-    private long _filteredProcessContextSwitch;
+    long _filteredProcessContextSwitch;
 
-    private long _filteredProcessIdleContextSwitch;
+    long _filteredProcessIdleContextSwitch;
 
-    private decimal _wallTimeStart = decimal.MaxValue;
-    private decimal _wallTimeEnd = 0;
+    decimal _wallTimeStart = decimal.MaxValue;
+    decimal _wallTimeEnd = 0;
 
-    private Dictionary<int, IdleWakeup> _idleWakeupsByThreadId = new();
+    Dictionary<string, long> _strings;
+    long _nextStringId;
 
-    private Dictionary<string, long> _filteredProcessReadyingProcesses = new();
+    Dictionary<Location, ulong> _locations;
+    ulong _nextLocationId;
 
-    private Dictionary<int, long> _previousCStates = new();
+    Dictionary<Function, ulong> _functions;
+    ulong _nextFunctionId;
 
-    private Dictionary<string, StackFrames> _readyingThreadStacksByAnalyzerString = new();
+    Regex _stripSourceFileNamePrefixRegex;
 
-    private Dictionary<string, StackFrames> _readiedThreadStacksByAnalyzerString = new();
+    Dictionary<int, IdleWakeup> _idleWakeupsByThreadId = new();
+
+    Dictionary<string, long> _filteredProcessReadyingProcesses = new();
+
+    Dictionary<int, long> _previousCStates = new();
+
+    Dictionary<string, StackFrames> _readyingThreadStacksByAnalyzerString = new();
+
+    Dictionary<string, StackFrames> _readiedThreadStacksByAnalyzerString = new();
+
+    pb.Profile _profile = new pb.Profile();
   }
 }
 
 /* ----- snippets
+ 
+    // processId: 0
+    // imageName: ntoskrnl.exe
+    // imagePath: C:\Windows\System32\ntoskrnl.exe
+    // functionAddress: 0xFFFFF80615BFE300
+    // functionName: SwapContext
+
+    // processId: 2520
+    // imageName: KernelBase.dll
+    // imagePath: C:\Windows\System32\KernelBase.dll
+    // functionAddress: 0x00007FFD17F019D0
+    // functionName: WaitForSingleObjectEx
+    // 
+    // processId: 2520
+    // imageName: chrome.dll
+    // imagePath: C: \Users\henri\AppData\Local\Google\Chrome SxS\Application\98.0.4742.0\chrome.dll
+    // functionAddress: 0x00007FFCB39E1D50
+    // functionName: base::WaitableEvent::TimedWait
+
+    // sourceFileName: C:\b\s\w\ir\cache\builder\src\base\message_loop\message_pump_win.cc
  
  const int threadId = 13972;
 

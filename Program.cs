@@ -203,6 +203,9 @@ namespace IdleWakeups
           profileAnalyzer.WriteSummary();
         }
 
+        long outputSize = profileAnalyzer.WritePprof("profile.pb.gz");
+        // Console.WriteLine("Wrote {0:N0} bytes to {1}", outputSize, opts.outputFileName);
+
         if (opts.verboseOutput)
         {
           watch.Stop();
