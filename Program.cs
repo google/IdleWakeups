@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Detects idle wakeups in Chrome in an ETW using TraceProcessing.
+// Detects idle wakeups in Chrome in an ETW using TraceProcessing and exports symbolized callstacks
+// related to these wakeups into a gzip-compressed protocol buffer (profile.proto).
+//
 // Explanations of the techniques can be found here:
 // https://randomascii.wordpress.com/2020/01/05/bulk-etw-trace-analysis-in-c/
 //
@@ -20,6 +22,9 @@
 // drive this:
 // https://blogs.windows.com/windowsdeveloper/2019/05/09/announcing-traceprocessor-preview-0-1-0/
 // Note that this URL has changed once already, so caveat blog lector.
+//
+// The profile.proto is a protocol buffer and its format is described at:
+// https://github.com/google/pprof/blob/master/proto/profile.proto
 //
 // See also https://randomascii.wordpress.com/2015/09/24/etw-central/ for more details.
 //
@@ -41,16 +46,20 @@ namespace IdleWakeups
       public static IEnumerable<Example> Examples =>
 #pragma warning disable CS8618
           new List<Example>() {
-            new Example("Scan trace file for Idle-Wakeups using default options",
+            new Example("Export idlewakeup callstacks to specified pprof profile using default options",
                         new UnParserSettings { PreferShortName = true },
-                        new Options { etlFileName = "trace.etl" }),
-            new Example("Scan trace file for Idle-Wakeups from all processes from 20s to 30s",
+                        new Options { etlFileName = "trace.etl", outputFileName = "profile.pb.gz" }),
+            new Example("Export idlewakeup callstacks from all processes from 20s to 30s to default pprof profile",
                         new UnParserSettings { PreferShortName = true },
                         new Options { etlFileName = "trace.etl", processFilter = "*", timeStart = 20, timeEnd = 30 }),
           };
 
       [Value(0, MetaName = "etlFileName", Required = true, HelpText = "ETL trace file name.")]
       public string etlFileName { get; set; }
+
+      [Option('o', "outputFileName", Required = false, Default = "profile.pb.gz",
+              HelpText = "Output file name for gzipped pprof profile.")]
+      public string outputFileName { get; set; }
 
       [Option("listProcesses", Required = false, Default = false, SetName = "processes",
               HelpText = "Whether all process names (unique) shall be printed out instead of running an analysis.")]
@@ -72,22 +81,6 @@ namespace IdleWakeups
       [Option('s', "printSummary", Required = false, Default = false, SetName = "cpu",
               HelpText = "Whether a summary shall be written out after the analysis is completed.")]
       public bool printSummary { get; set; }
-
-      [Option('c', "printCallstacks", Required = false, Default = false, SetName = "cpu",
-              HelpText = "Whether idlewakeup callstacks shall be written out after the analysis is completed.")]
-      public bool printCallstacks { get; set; }
-
-      [Option("callstackThreadId", Required = false, Default = null, SetName = "cpu",
-              HelpText = "Use in combination with --printCallstacks to limit the output to only one thread ID.")]
-      public int? threadId { get; set; }
-
-      [Option("includeNewThreadStacks", Required = false, Default = true,
-              HelpText = "Whether New Thread Stacks are inlcuded when writing callstacks.")]
-      public bool includeNewThreadStacks { get; set; }
-
-      [Option("includeReadiedThreadStacks", Required = false, Default = false,
-              HelpText = "Whether Readied Thread Stacks are inlcuded when writing callstacks.")]
-      public bool includeReadiedThreadStacks { get; set; }
 
       [Option("loadSymbols", Required = false, Default = true, SetName = "cpu",
               HelpText = "Whether symbols should be loaded.")]
@@ -203,8 +196,8 @@ namespace IdleWakeups
           profileAnalyzer.WriteSummary();
         }
 
-        long outputSize = profileAnalyzer.WritePprof("profile.pb.gz");
-        // Console.WriteLine("Wrote {0:N0} bytes to {1}", outputSize, opts.outputFileName);
+        long outputSize = profileAnalyzer.WritePprof(opts.outputFileName);
+        Console.WriteLine("Wrote {0:N0} bytes to {1}", outputSize, opts.outputFileName);
 
         if (opts.verboseOutput)
         {
