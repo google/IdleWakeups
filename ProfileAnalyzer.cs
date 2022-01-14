@@ -12,17 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-using Google.Protobuf;
-
-using Microsoft.Windows.EventTracing;
-using Microsoft.Windows.EventTracing.Cpu;
-using Microsoft.Windows.EventTracing.Symbols;
-
-using pb = Perftools.Profiles;
-
 using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
+using Google.Protobuf;
+using Microsoft.Windows.EventTracing;
+using Microsoft.Windows.EventTracing.Cpu;
+using Microsoft.Windows.EventTracing.Symbols;
+using pb = Perftools.Profiles;
 
 namespace IdleWakeups
 {
@@ -94,7 +91,6 @@ namespace IdleWakeups
 
       public override int GetHashCode()
       {
-        // return (ProcessId, ImagePath, FunctionAddress, FunctionName).GetHashCode();
         return HashCode.Combine(ProcessId, ImagePath, FunctionAddress, FunctionName);
       }
     }
@@ -147,13 +143,42 @@ namespace IdleWakeups
       _functions = new Dictionary<Function, ulong>();
       _nextFunctionId = 1;
 
+      // Counts all readied callstacks related to idlewakeups where a context switch between an
+      // (old) idle thread and (new) thread in e.g. Chrome has taken place.
       var iWakeupCountValueType = new pb.ValueType();
-      iWakeupCountValueType.Type = GetStringId("readied stacks");
+      iWakeupCountValueType.Type = GetStringId("readied_all");
       iWakeupCountValueType.Unit = GetStringId("count");
       _profile.SampleType.Add(iWakeupCountValueType);
 
+      // Counts all readied callstacks where the readying thread was not doing DPC.
       iWakeupCountValueType = new pb.ValueType();
-      iWakeupCountValueType.Type = GetStringId("readying stacks");
+      iWakeupCountValueType.Type = GetStringId("readied_no_dpc");
+      iWakeupCountValueType.Unit = GetStringId("count");
+      _profile.SampleType.Add(iWakeupCountValueType);
+
+      // Counts all readied callstacks where the readying thread was doing DPC.
+      iWakeupCountValueType = new pb.ValueType();
+      iWakeupCountValueType.Type = GetStringId("readied_dpc");
+      iWakeupCountValueType.Unit = GetStringId("count");
+      _profile.SampleType.Add(iWakeupCountValueType);
+
+      // Counts all readying callstacks related to idlewakeups where a context switch between an
+      // (old) idle thread and (new) thread in e.g. Chrome has taken place. These callstacks comes
+      // from the readying thread that made the new thread eligible to run.
+      iWakeupCountValueType = new pb.ValueType();
+      iWakeupCountValueType.Type = GetStringId("readying_all");
+      iWakeupCountValueType.Unit = GetStringId("count");
+      _profile.SampleType.Add(iWakeupCountValueType);
+
+      // Counts all readying callstacks where the readying thread was not doing DPC.
+      iWakeupCountValueType = new pb.ValueType();
+      iWakeupCountValueType.Type = GetStringId("readying_no_dpc");
+      iWakeupCountValueType.Unit = GetStringId("count");
+      _profile.SampleType.Add(iWakeupCountValueType);
+
+      // Counts all readying callstacks where the readying thread was not doing DPC.
+      iWakeupCountValueType = new pb.ValueType();
+      iWakeupCountValueType.Type = GetStringId("readying_dpc");
       iWakeupCountValueType.Unit = GetStringId("count");
       _profile.SampleType.Add(iWakeupCountValueType);
     }
@@ -256,7 +281,7 @@ namespace IdleWakeups
           }
 
           // Next (still using thread ID as key), also add two dictionaries for the new/readied
-          // thread stack and the readying thread stack using unique strings from
+          // thread stack and the old/readying thread stack using unique strings from
           // GetAnalyzerString() as keys. For each key, store count and the a list of stack frames
           // as value.
           StackFrames stackFrames;
@@ -297,7 +322,6 @@ namespace IdleWakeups
           _idleWakeupsByThreadId[switchInThreadId] = iwakeup;
 
           // Get the last C-State the processor went into when it was idle.
-          // TODO(henrikand): perhaps exclude updating when in DPC.
           var prevCState = contextSwitch.PreviousCState;
           if (prevCState.HasValue)
           {
@@ -311,6 +335,7 @@ namespace IdleWakeups
           // the unique strings from GetAnalyzerString() as keys and map count and list of stack
           // frames as value. This will give us the full/true distibution of callstacks since the
           // one stored with thread ID may contain copies of the same stack frames.
+          // These two dictionaries will be used as base for exporting callstacks to pprof profiles.
           if (readiedThreadStackKey is not null && readiedThreadStackFrames is not null)
           {
             _readiedThreadStacksByAnalyzerString.TryGetValue(readiedThreadStackKey, out stackFrames);
@@ -327,6 +352,10 @@ namespace IdleWakeups
           {
             _readyingThreadStacksByAnalyzerString.TryGetValue(readyingThreadStackKey, out stackFrames);
             stackFrames.StackCount++;
+            if (readyingThreadInDPC)
+            {
+              stackFrames.StackDPCCount++;
+            }
             stackFrames.Stack = readyingThreadStackFrames;
             _readyingThreadStacksByAnalyzerString[readyingThreadStackKey] = stackFrames;
           }
@@ -471,73 +500,40 @@ namespace IdleWakeups
         totalReadyingThreadStacksCount);
     }
 
-    /*
-      profile.Comment.Add(GetStringId($"Converted by EtwToPprof from {Path.GetFileName(options.etlFileName)}"));
-      if (wallTimeStart < wallTimeEnd)
-      {
-        decimal wallTimeMs = (wallTimeEnd - wallTimeStart) * 1000;
-        profile.Comment.Add(GetStringId($"Wall time {wallTimeMs:F} ms"));
-        profile.Comment.Add(GetStringId($"CPU time {totalCpuTime:F} ms ({totalCpuTime / wallTimeMs:P})"));
-
-        var sortedProcesses = processCpuTimes.Keys.ToList();
-        sortedProcesses.Sort((a, b) => -processCpuTimes[a].CompareTo(processCpuTimes[b]));
-
-        foreach (var processLabel in sortedProcesses)
-        {
-          decimal processCpuTime = processCpuTimes[processLabel];
-          profile.Comment.Add(GetStringId($"  {processLabel} {processCpuTime:F} ms ({processCpuTime / wallTimeMs:P})"));
-
-          var threadCpuTimes = processThreadCpuTimes[processLabel];
-
-          var sortedThreads = threadCpuTimes.Keys.ToList();
-          sortedThreads.Sort((a, b) => -threadCpuTimes[a].CompareTo(threadCpuTimes[b]));
-
-          foreach (var threadLabel in sortedThreads)
-          {
-            var threadCpuTime = threadCpuTimes[threadLabel];
-            profile.Comment.Add(GetStringId($"    {threadLabel} {threadCpuTime:F} ms ({threadCpuTime / wallTimeMs:P})"));
-          }
-        }
-      }
-      else
-      {
-        profile.Comment.Add(GetStringId("No samples exported"));
-      }
-      using (FileStream output = File.Create(outputFileName))
-      {
-        using (GZipStream gzip = new GZipStream(output, CompressionMode.Compress))
-        {
-          using (CodedOutputStream serialized = new CodedOutputStream(gzip))
-          {
-            profile.WriteTo(serialized);
-            return output.Length;
-          }
-        }
-      }
-     */
-
     public long WritePprof(string outputFileName)
     {
       if (_wallTimeStart < _wallTimeEnd)
       {
         var durationMs = (_wallTimeEnd - _wallTimeStart) * 1000;
         _profile.Comment.Add(GetStringId($"Duration (msec): {durationMs:F}"));
+        var processFilter = ProcessFilterToString();
+        _profile.Comment.Add(GetStringId($"Process filter: {processFilter}"));
+        _profile.Comment.Add(GetStringId($"Context switches (On-CPU): {_filteredProcessContextSwitch}"));
+        _profile.Comment.Add(GetStringId($"Idle wakeups: {_filteredProcessIdleContextSwitch}"));
+        var IdleWakeupsInPercent = 100 * (double)_filteredProcessIdleContextSwitch / _filteredProcessContextSwitch;
+        _profile.Comment.Add(GetStringId($"Idle wakeups (%): {IdleWakeupsInPercent:F}"));
       }
       else
       {
         _profile.Comment.Add(GetStringId("No samples exported"));
       }
-      const int numStacks = 25;
+
+      // Write callstacks related to readiead threads.
       var sortedReadiedThreadStacksByAnalyzerString =
            new List<KeyValuePair<string, StackFrames>>(_readiedThreadStacksByAnalyzerString);
       sortedReadiedThreadStacksByAnalyzerString.Sort((x, y) => y.Value.StackCount.CompareTo(x.Value.StackCount));
       foreach (KeyValuePair<string, StackFrames> kvp in sortedReadiedThreadStacksByAnalyzerString)
       {
         var sampleProto = new pb.Sample();
-        // Only the readied stack count is updated.
+        // Count three different types of readied threads: all, without DPC and with DPC.
         sampleProto.Value.Add(kvp.Value.StackCount);
-        // Readying stack count is set to zero.
-        sampleProto.Value.Add(0);           
+        sampleProto.Value.Add(kvp.Value.StackCount - kvp.Value.StackDPCCount);
+        sampleProto.Value.Add(kvp.Value.StackDPCCount);
+        // Readying stack counts are all set to zero.
+        sampleProto.Value.Add(0);
+        sampleProto.Value.Add(0);
+        sampleProto.Value.Add(0);
+
         var stackFrames = kvp.Value.Stack;
 
         if (stackFrames.Count == 0)
@@ -549,12 +545,11 @@ namespace IdleWakeups
         {
           if (stackFrame.HasValue && stackFrame.Symbol is not null)
           {
-            // Console.WriteLine(stackFrame.GetAnalyzerString());
             sampleProto.LocationId.Add(GetLocationId(stackFrame.Symbol));
           }
           else
           {
-            // TODO(henrika): EtwToPprof uses "int processId = sample.Process.Id"
+            // TODO(henrika): add support for "real PID" from Process.Id.
             int processId = 0;
             string imageName = stackFrame.Image?.FileName ?? "<unknown>";
             string functionLabel = "<unknown>";
@@ -562,22 +557,26 @@ namespace IdleWakeups
               GetPseudoLocationId(processId, imageName, null, functionLabel));
           }
         }
-     
+
         _profile.Sample.Add(sampleProto);
       }
 
-      Console.WriteLine();
-
+      // Write callstacks related to readying threads.
       var sortedReadyingThreadStacksByAnalyzerString =
           new List<KeyValuePair<string, StackFrames>>(_readyingThreadStacksByAnalyzerString);
       sortedReadyingThreadStacksByAnalyzerString.Sort((x, y) => y.Value.StackCount.CompareTo(x.Value.StackCount));
       foreach (KeyValuePair<string, StackFrames> kvp in sortedReadyingThreadStacksByAnalyzerString)
       {
         var sampleProto = new pb.Sample();
-        // Readied stack count is set to zero.
+        // Readied stack counts are all set to zero.
         sampleProto.Value.Add(0);
-        // Only the readying stack count is updated.
+        sampleProto.Value.Add(0);
+        sampleProto.Value.Add(0);
+        // Count three different types of readying threads: all, without DPC and with DPC.
         sampleProto.Value.Add(kvp.Value.StackCount);
+        sampleProto.Value.Add(kvp.Value.StackCount - kvp.Value.StackDPCCount);
+        sampleProto.Value.Add(kvp.Value.StackDPCCount);
+
         var stackFrames = kvp.Value.Stack;
 
         if (stackFrames.Count == 0)
@@ -593,7 +592,7 @@ namespace IdleWakeups
           }
           else
           {
-            // TODO(henrika): EtwToPprof uses "int processId = sample.Process.Id"
+            // TODO(henrika): add support for "real PID" from Process.Id.
             int processId = 0;
             string imageName = stackFrame.Image?.FileName ?? "<unknown>";
             string functionLabel = "<unknown>";
@@ -605,7 +604,8 @@ namespace IdleWakeups
         _profile.Sample.Add(sampleProto);
       }
 
-      _profile.Comment.Add(GetStringId($"Exported by IdleWakeups from {Path.GetFileName(outputFileName)}"));
+      _profile.Comment.Add(
+        GetStringId($"Exported by https://github.com/google/IdleWakeups from {Path.GetFileName(outputFileName)}"));
 
       using (FileStream output = File.Create(outputFileName))
       {
@@ -641,7 +641,9 @@ namespace IdleWakeups
     {
       if (stackSymbol.Image is null)
       {
-        // TODO(henrika): improve
+        // TODO(henrika): resolves some compiler warnings related to nullability of reference
+        // types but I have not seen any error messages printed out so far. Hence, not sure if
+        // more work is needed here or not.
         Console.Error.WriteLine("Invalid stack symbol image");
         return 0;
       }
@@ -650,7 +652,7 @@ namespace IdleWakeups
       var imagePath = stackSymbol.Image.Path;
       var functionAddress = stackSymbol.AddressRange.BaseAddress;
       var functionName = stackSymbol.FunctionName;
-      
+
       var location = new Location(processId, imagePath, functionAddress, functionName);
 
       ulong locationId;
