@@ -1,6 +1,9 @@
 # IdleWakeups
 
-IdleWakeups detects idle wakeups in given processes from an ETW. It uses the [.NET TraceProcessing API](https://www.nuget.org/packages/Microsoft.Windows.EventTracing.Processing.All)
+IdleWakeups detects idle wakeups in Chrome (using an ETW trace) and exports symbolized callstacks
+related to these wakeups into a gzip-compressed protocol buffer (profile.proto).
+
+It uses the [.NET TraceProcessing API](https://www.nuget.org/packages/Microsoft.Windows.EventTracing.Processing.All)
 to process ETW traces.
 
 This tool was built for processing ETW traces from Chrome, so the default values
