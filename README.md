@@ -1,6 +1,6 @@
 # IdleWakeups
 
-IdleWakeups detects idle wakeups in Chrome (using an ETW trace) and exports symbolized callstacks
+IdleWakeups detects idle-wakeups in Chrome (using an ETW trace) and exports symbolized callstacks
 related to these wakeups into a gzip-compressed [protocol buffer](https://github.com/google/pprof/blob/master/proto/profile.proto).
 
 It uses the [.NET TraceProcessing API](https://www.nuget.org/packages/Microsoft.Windows.EventTracing.Processing.All)
@@ -25,13 +25,13 @@ Build the provided Visual Studio Solution with VS 2022.
 
 ## Examples
 
-Scan trace file and print summary for idle wakeups using default options:
+Export idlewakeup callstacks found in `trace.etl` to specified pprof profile using default options:
 
-    IdleWakeups --printSummary trace.etl
+    IdleWakeups -o profile.pb.gz trace.etl
   
-Scan trace file and print summary for idle wakeups from all processes from 20s to 30s:
+Export idlewakeup callstacks from all processes from 20s to 30s to default pprof profile:
 
-    IdleWakeups -s -p * --timeStart 20 --timeEnd 30 trace.etl
+    IdleWakeups -p * --timeEnd 30 --timeStart 20 trace.etl
 
 ## Command line flags
 
