@@ -35,6 +35,8 @@ Export idlewakeup callstacks from all processes from 20s to 30s to default pprof
 
 ## Command line flags
 
+    -o, --outputFileName    (Default: profile.pb.gz) Output file name for gzipped pprof profile.
+
     --listProcesses         (Default: false) Whether all process names (unique) shall be printed out instead of running an analysis.
 
     -p, --processFilter     (Default: chrome.exe) Filter for process names (comma-separated) to be included in the analysis. All processes will be analyzed if set to *.
