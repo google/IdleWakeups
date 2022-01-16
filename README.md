@@ -1,7 +1,7 @@
 # IdleWakeups
 
 IdleWakeups detects idle wakeups in Chrome (using an ETW trace) and exports symbolized callstacks
-related to these wakeups into a gzip-compressed protocol buffer (profile.proto).
+related to these wakeups into a gzip-compressed [protocol buffer](https://github.com/google/pprof/blob/master/proto/profile.proto).
 
 It uses the [.NET TraceProcessing API](https://www.nuget.org/packages/Microsoft.Windows.EventTracing.Processing.All)
 to process ETW traces.
