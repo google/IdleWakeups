@@ -14,7 +14,7 @@ See this [blog post](https://blogs.windows.com/windowsdeveloper/2019/05/09/annou
 
 More explanations of the techniques used in this program can be found [here](https://randomascii.wordpress.com/2020/01/05/bulk-etw-trace-analysis-in-c/).
 
-The style and structure of this project is inspired by work in [EtwToPprof]https://github.com/google/EtwToPprof.
+The style and structure of this project is inspired by work in [EtwToPprof](https://github.com/google/EtwToPprof).
 
 ## Building
 
