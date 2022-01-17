@@ -30,6 +30,10 @@
 //
 // Comments are nomenclature follows the style used by WPA.
 
+using System;
+using System.Collections.Generic;
+using System.IO;
+
 using CommandLine;
 using CommandLine.Text;
 
