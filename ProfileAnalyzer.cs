@@ -12,14 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-using System.IO.Compression;
-using System.Text;
-using System.Text.RegularExpressions;
 using Google.Protobuf;
+using pb = Perftools.Profiles;
+
 using Microsoft.Windows.EventTracing;
 using Microsoft.Windows.EventTracing.Cpu;
 using Microsoft.Windows.EventTracing.Symbols;
-using pb = Perftools.Profiles;
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace IdleWakeups
 {
@@ -203,7 +209,7 @@ namespace IdleWakeups
 
       // Check if all processes shall be analyzed when switched in (filter set to '*') or if a
       // filter has been set (e.g. 'chrome.exe') and it contains the process name switching in.
-      if (_options.ProcessFilterSet is null ||
+      if (_options.ProcessFilterSet == null ||
           _options.ProcessFilterSet.Contains(switchInImageName))
       {
         _wallTimeStart = Math.Min(_wallTimeStart, timestamp);
@@ -285,11 +291,11 @@ namespace IdleWakeups
           // GetAnalyzerString() as keys. For each key, store count and the a list of stack frames
           // as value.
           StackFrames stackFrames;
-          if (iwakeup.ReadiedThreadStacks is null)
+          if (iwakeup.ReadiedThreadStacks == null)
           {
             iwakeup.ReadiedThreadStacks = new Dictionary<string, StackFrames>();
           }
-          if (readiedThreadStackKey is not null && readiedThreadStackFrames is not null)
+          if (readiedThreadStackKey != null && readiedThreadStackFrames != null)
           {
             iwakeup.ReadiedThreadStacks.TryGetValue(readiedThreadStackKey, out stackFrames);
             stackFrames.StackCount++;
@@ -301,11 +307,11 @@ namespace IdleWakeups
             iwakeup.ReadiedThreadStacks[readiedThreadStackKey] = stackFrames;
           }
 
-          if (iwakeup.ReadyingThreadStacks is null)
+          if (iwakeup.ReadyingThreadStacks == null)
           {
             iwakeup.ReadyingThreadStacks = new Dictionary<string, StackFrames>();
           }
-          if (readyingThreadStackKey is not null && readyingThreadStackFrames is not null)
+          if (readyingThreadStackKey != null && readyingThreadStackFrames != null)
           {
             iwakeup.ReadyingThreadStacks.TryGetValue(readyingThreadStackKey, out stackFrames);
             stackFrames.StackCount++;
@@ -336,7 +342,7 @@ namespace IdleWakeups
           // frames as value. This will give us the full/true distibution of callstacks since the
           // one stored with thread ID may contain copies of the same stack frames.
           // These two dictionaries will be used as base for exporting callstacks to pprof profiles.
-          if (readiedThreadStackKey is not null && readiedThreadStackFrames is not null)
+          if (readiedThreadStackKey != null && readiedThreadStackFrames != null)
           {
             _readiedThreadStacksByAnalyzerString.TryGetValue(readiedThreadStackKey, out stackFrames);
             stackFrames.StackCount++;
@@ -348,7 +354,7 @@ namespace IdleWakeups
             _readiedThreadStacksByAnalyzerString[readiedThreadStackKey] = stackFrames;
           }
 
-          if (readyingThreadStackKey is not null && readyingThreadStackFrames is not null)
+          if (readyingThreadStackKey != null && readyingThreadStackFrames != null)
           {
             _readyingThreadStacksByAnalyzerString.TryGetValue(readyingThreadStackKey, out stackFrames);
             stackFrames.StackCount++;
@@ -463,6 +469,11 @@ namespace IdleWakeups
       {
         var value = idleWakeup.Value;
         var dpcInPercent = 100 * value.ContextSwitchDPCCount / (double)value.ContextSwitchCount;
+        string dpcInPercentAsString = "";
+        if (dpcInPercent > 0)
+        {
+          dpcInPercentAsString = dpcInPercent.ToString("0.#0");
+        }
         Console.WriteLine(composite,
           idleWakeup.Key, sep,
           value.ProcessId, sep,
@@ -473,7 +484,7 @@ namespace IdleWakeups
           value.ContextSwitchCount, sep,
           Math.Round(value.ContextSwitchCount / durationInSec, MidpointRounding.AwayFromZero), sep,
           value.ContextSwitchDPCCount.ToString("#"), sep,
-          dpcInPercent > 0 ? dpcInPercent : "", sep,
+          dpcInPercentAsString, sep,
           Math.Round(value.ContextSwitchDPCCount / durationInSec, MidpointRounding.AwayFromZero).ToString("#"), sep,
           value.ReadiedThreadStacks.Count, sep,
           value.ReadyingThreadStacks.Count);
@@ -543,7 +554,7 @@ namespace IdleWakeups
 
         foreach (var stackFrame in stackFrames)
         {
-          if (stackFrame.HasValue && stackFrame.Symbol is not null)
+          if (stackFrame.HasValue && stackFrame.Symbol != null)
           {
             sampleProto.LocationId.Add(GetLocationId(stackFrame.Symbol));
           }
@@ -586,7 +597,7 @@ namespace IdleWakeups
 
         foreach (var stackFrame in stackFrames)
         {
-          if (stackFrame.HasValue && stackFrame.Symbol is not null)
+          if (stackFrame.HasValue && stackFrame.Symbol != null)
           {
             sampleProto.LocationId.Add(GetLocationId(stackFrame.Symbol));
           }
@@ -639,7 +650,7 @@ namespace IdleWakeups
     // in the form of lines, and a mapping id that points to a binary.
     private ulong GetLocationId(IStackSymbol stackSymbol)
     {
-      if (stackSymbol.Image is null)
+      if (stackSymbol.Image == null)
       {
         // TODO(henrika): resolves some compiler warnings related to nullability of reference
         // types but I have not seen any error messages printed out so far. Hence, not sure if
@@ -725,7 +736,7 @@ namespace IdleWakeups
         functionProto.Id = _nextFunctionId++;
         functionProto.Name = GetStringId(functionName ?? function.ToString());
         functionProto.SystemName = GetStringId(function.ToString());
-        if (sourceFileName is null)
+        if (sourceFileName == null)
         {
           sourceFileName = imageName;
         }
@@ -861,15 +872,15 @@ namespace IdleWakeups
 
     Regex _stripSourceFileNamePrefixRegex;
 
-    Dictionary<int, IdleWakeup> _idleWakeupsByThreadId = new();
+    Dictionary<int, IdleWakeup> _idleWakeupsByThreadId = new Dictionary<int, IdleWakeup>();
 
-    Dictionary<string, long> _filteredProcessReadyingProcesses = new();
+    Dictionary<string, long> _filteredProcessReadyingProcesses = new Dictionary<string, long>();
 
-    Dictionary<int, long> _previousCStates = new();
+    Dictionary<int, long> _previousCStates = new Dictionary<int, long>();
 
-    Dictionary<string, StackFrames> _readyingThreadStacksByAnalyzerString = new();
+    Dictionary<string, StackFrames> _readyingThreadStacksByAnalyzerString = new Dictionary<string, StackFrames>();
 
-    Dictionary<string, StackFrames> _readiedThreadStacksByAnalyzerString = new();
+    Dictionary<string, StackFrames> _readiedThreadStacksByAnalyzerString = new Dictionary<string, StackFrames>();
 
     pb.Profile _profile = new pb.Profile();
   }
