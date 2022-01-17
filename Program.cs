@@ -124,8 +124,7 @@ namespace IdleWakeups
       {
         // Provides data from a trace about CPU thread scheduling, including context switches and
         // ready thread events. WPA: CPU Usage (Precise) table.
-        var pendingCpuSchedulingData =
-            trace.UseCpuSchedulingData();
+        var pendingCpuSchedulingData = trace.UseCpuSchedulingData();
         var pendingProcessData = trace.UseProcesses();
         var pendingSymbolData = trace.UseSymbols();
 
