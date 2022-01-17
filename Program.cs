@@ -82,6 +82,14 @@ namespace IdleWakeups
               HelpText = "End of time range to analyze in seconds")]
       public decimal? timeEnd { get; set; }
 
+      [Option("includeProcessIds", Required = false, Default = false,
+              HelpText = "Whether process ids are included in the exported profile.")]
+      public bool includeProcessIds { get; set; }
+
+      [Option("includeProcessAndThreadIds", Required = false, Default = false,
+              HelpText = "Whether process and thread ids are included in the exported profile.")]
+      public bool includeProcessAndThreadIds { get; set; }
+
       [Option('s', "printSummary", Required = false, Default = false, SetName = "cpu",
               HelpText = "Whether a summary shall be written out after the analysis is completed.")]
       public bool printSummary { get; set; }
@@ -173,6 +181,8 @@ namespace IdleWakeups
 
         var profileOpts = new ProfileAnalyzer.Options();
         profileOpts.EtlFileName = opts.etlFileName;
+        profileOpts.IncludeProcessIds = opts.includeProcessIds;
+        profileOpts.IncludeProcessAndThreadIds = opts.includeProcessAndThreadIds;
         profileOpts.TimeStart = opts.timeStart ?? 0;
         profileOpts.TimeEnd = opts.timeEnd ?? decimal.MaxValue;
         profileOpts.Tabbed = opts.printTabbed;
@@ -201,6 +211,7 @@ namespace IdleWakeups
 
         long outputSize = profileAnalyzer.WritePprof(opts.outputFileName);
         Console.WriteLine("Wrote {0:N0} bytes to {1}", outputSize, opts.outputFileName);
+        Console.WriteLine();
 
         if (opts.verboseOutput)
         {
