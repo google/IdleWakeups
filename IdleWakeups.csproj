@@ -3,20 +3,31 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net6.0</TargetFramework>
-	<Version>0.0.1</Version>
+	<Version>0.1.0</Version>
 	<Authors>Henrik Andreasson</Authors>
 	<Company>Google Inc.</Company>
-	<Description>IdleWakeups analyzes ETW traces looking for Idle-Wakeups.</Description>
+	<Description>IdleWakeups detects idle-wakeups in Chrome (using an ETW trace) and exports symbolized callstacks related to these wakeups into a gzip-compressed protocol buffer.</Description>
 	<Copyright>Copyright 2022 Google Inc</Copyright>
+    <PackageProjectUrl>https://github.com/google/IdleWakeups</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/google/IdleWakeups</RepositoryUrl>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Platforms>x64;x86</Platforms>
+    <RepositoryType>git</RepositoryType>
+    <Platforms>AnyCPU;x64;x86</Platforms>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.8.0" />
     <PackageReference Include="Google.Protobuf" Version="3.19.3" />
     <PackageReference Include="Microsoft.Windows.EventTracing.Processing.All" Version="1.9.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
 </Project>
