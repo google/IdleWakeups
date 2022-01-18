@@ -90,6 +90,10 @@ namespace IdleWakeups
               HelpText = "Whether process and thread ids are included in the exported profile.")]
       public bool includeProcessAndThreadIds { get; set; }
 
+      [Option("splitChromeProcesses", Required = false, Default = true,
+              HelpText = "Whether chrome.exe processes are split by type (parsed from command line).")]
+      public bool splitChromeProcesses { get; set; }
+
       [Option('s', "printSummary", Required = false, Default = false, SetName = "cpu",
               HelpText = "Whether a summary shall be written out after the analysis is completed.")]
       public bool printSummary { get; set; }
@@ -183,6 +187,7 @@ namespace IdleWakeups
         profileOpts.EtlFileName = opts.etlFileName;
         profileOpts.IncludeProcessIds = opts.includeProcessIds;
         profileOpts.IncludeProcessAndThreadIds = opts.includeProcessAndThreadIds;
+        profileOpts.SplitChromeProcesses = opts.splitChromeProcesses;
         profileOpts.TimeStart = opts.timeStart ?? 0;
         profileOpts.TimeEnd = opts.timeEnd ?? decimal.MaxValue;
         profileOpts.Tabbed = opts.printTabbed;
