@@ -56,6 +56,12 @@ namespace IdleWakeups
             new Example("Export idlewakeup callstacks from all processes from 20s to 30s to default pprof profile",
                         new UnParserSettings { PreferShortName = true },
                         new Options { etlFileName = "trace.etl", processFilter = "*", timeStart = 20, timeEnd = 30 }),
+            new Example("Export idlewakeup callstacks from specified process names",
+                        new UnParserSettings { PreferShortName = true },
+                        new Options { etlFileName = "trace.etl", processFilter = "audiodg.exe,dwm.exe" }),
+            new Example("Export idlewakeup callstacks and thread/process ids",
+                        new UnParserSettings { PreferShortName = true },
+                        new Options { etlFileName = "trace.etl", includeProcessAndThreadIds = true }),
           };
 
       [Value(0, MetaName = "etlFileName", Required = true, HelpText = "ETL trace file name.")]

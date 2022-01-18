@@ -35,6 +35,14 @@ Export idlewakeup callstacks from all processes from 20s to 30s to default pprof
 
     IdleWakeups -p * --timeEnd 30 --timeStart 20 trace.etl
 
+Export idlewakeup callstacks from specified process names:
+
+    IdleWakeups -p audiodg.exe,dwm.exe trace.etl
+
+Export idlewakeup callstacks and thread/process ids:
+
+    IdleWakeups --includeProcessAndThreadIds trace.etl
+
 ## Command line flags
 
     -o, --outputFileName            (Default: profile.pb.gz) Output file name for gzipped pprof
