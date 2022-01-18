@@ -51,8 +51,8 @@ Export idlewakeup callstacks from all processes from 20s to 30s to default pprof
 
     --includeProcessIds             (Default: false) Whether process ids are included in the exported profile.
 
-    --includeProcessAndThreadIds    (Default: false) Whether process and thread ids are included in the exported
-                                    profile.
+    --includeProcessAndThreadIds    (Default: false) Whether process and thread ids are included in the
+                                    exported profile.
 
     --splitChromeProcesses          (Default: true) Whether chrome.exe processes are split by type (parsed from
                                     command line).
