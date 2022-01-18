@@ -62,7 +62,7 @@ Export idlewakeup callstacks from all processes from 20s to 30s to default pprof
 
     -s, --printSummary              (Default: false) Whether a summary shall be printed after the
                                     analysis is completed.
-
+                                    
     --loadSymbols                   (Default: true) Whether symbols should be loaded.
 
     -t, --tabbed                    (Default: false) Print results as a tab-separated grid.
