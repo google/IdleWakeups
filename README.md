@@ -37,32 +37,38 @@ Export idlewakeup callstacks from all processes from 20s to 30s to default pprof
 
 ## Command line flags
 
-    -o, --outputFileName    (Default: profile.pb.gz) Output file name for gzipped pprof profile.
+    -o, --outputFileName            (Default: profile.pb.gz) Output file name for gzipped pprof profile.
 
-    --listProcesses         (Default: false) Whether all process names (unique) shall be printed
-                            out instead of running an analysis.
+    --listProcesses                 (Default: false) Whether all process names (unique) shall be printed
+                                    out instead of running an analysis.
 
-    -p, --processFilter     (Default: chrome.exe) Filter for process names (comma-separated) to be
-                            included in the analysis. All processes will be analyzed if set to *.
+    -p, --processFilter             (Default: chrome.exe) Filter for process names (comma-separated) to be
+                                    included in the analysis. All processes will be analyzed if set to *.
 
-    --timeStart             Start of time range to analyze in seconds
+    --timeStart                     Start of time range to analyze in seconds
 
-    --timeEnd               End of time range to analyze in seconds
+    --timeEnd                       End of time range to analyze in seconds
 
-    -s, --printSummary      (Default: false) Whether a summary shall be printed after the analysis
-                            is completed.
+    --includeProcessIds             (Default: false) Whether process ids are included in the exported profile.
 
-    --loadSymbols           (Default: true) Whether symbols should be loaded.
+    --includeProcessAndThreadIds    (Default: false) Whether process and thread ids are included in the exported profile.
 
-    -t, --tabbed            (Default: false) Print results as a tab-separated grid.
+    --splitChromeProcesses          (Default: true) Whether chrome.exe processes are split by type (parsed from command line).
 
-    -v, --verboseOutput     (Default: false) Set output to verbose messages.
+    -s, --printSummary              (Default: false) Whether a summary shall be printed after the analysis
+                                    is completed.
 
-    --help                  Display this help screen.
+    --loadSymbols                   (Default: true) Whether symbols should be loaded.
 
-    --version               Display version information.
+    -t, --tabbed                    (Default: false) Print results as a tab-separated grid.
 
-    etlFileName (pos. 0)    Required. ETL trace file name.
+    -v, --verboseOutput             (Default: false) Set output to verbose messages.
+
+    --help                          Display this help screen.
+
+    --version                       Display version information.
+
+    etlFileName (pos. 0)            Required. ETL trace file name.
 
 ## Disclaimer:
 
