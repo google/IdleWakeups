@@ -1,0 +1,12 @@
+obj/**
+bin/**
+Properties/**
+*.csproj.user
+*.dll
+*.etl
+*.exe
+*.msi
+*.pb.gz
+*.runtimeconfig.json
+.vs
+.vscode
