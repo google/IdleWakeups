@@ -187,6 +187,7 @@ namespace IdleWakeups
             iwakeup.ThreadStartAddress = contextSwitch.SwitchIn.Thread.StartAddress;
             var commandLine = contextSwitch.SwitchIn.Process.CommandLine;
             iwakeup.ProcessName = switchInImageName;
+            iwakeup.WakerProcessName = wakerProcessImageName;
             iwakeup.ObjectAddress = contextSwitch.SwitchIn.Process.ObjectAddress;
             if (switchInImageName == "chrome.exe")
             {
@@ -499,39 +500,43 @@ namespace IdleWakeups
           }
         }
 
-        // Add thread name and possibly also thread id as label.
-        string processName = idleWakeup.ProcessName;
-        string threadLabel = idleWakeup.ThreadName;
-        if (String.IsNullOrEmpty(threadLabel))
-          threadLabel = "anonymous";
-        if (_options.IncludeProcessAndThreadIds)
+        if (type == ThreadStackTypes.Woken ||
+            type == ThreadStackTypes.Waker && idleWakeup.WakerProcessName == "chrome.exe")
         {
-          threadLabel = String.Format("{0} ({1})", threadLabel, threadId);
-        }
-        sampleProto.LocationId.Add(
-          GetPseudoLocationId(processId, processName, threadStartAddress, threadLabel));
+          // Add thread name and possibly also thread id as label.
+          string processName = idleWakeup.ProcessName;
+          string threadLabel = idleWakeup.ThreadName;
+          if (String.IsNullOrEmpty(threadLabel))
+            threadLabel = "anonymous";
+          if (_options.IncludeProcessAndThreadIds)
+          {
+            threadLabel = String.Format("{0} ({1})", threadLabel, threadId);
+          }
+          sampleProto.LocationId.Add(
+            GetPseudoLocationId(processId, processName, threadStartAddress, threadLabel));
 
-        // Add process name, type and possibly id as label depending on current options.
-        string processLabel = processName;
-        if (_options.SplitChromeProcesses && processName == "chrome.exe")
-        {
-          const string kUtilityProcessType = "utility";
-          var chromeProcessType = idleWakeup.ProcessType;
-          if (chromeProcessType.Type == kUtilityProcessType)
+          // Add process name, type and possibly id as label depending on current options.
+          string processLabel = processName;
+          if (_options.SplitChromeProcesses && processName == "chrome.exe")
           {
-            processLabel = processLabel + $" ({chromeProcessType.SubType})";
+            const string kUtilityProcessType = "utility";
+            var chromeProcessType = idleWakeup.ProcessType;
+            if (chromeProcessType.Type == kUtilityProcessType)
+            {
+              processLabel = processLabel + $" ({chromeProcessType.SubType})";
+            }
+            else
+            {
+              processLabel = processLabel + $" ({chromeProcessType.Type})";
+            }
           }
-          else
+          if (_options.IncludeProcessIds || _options.IncludeProcessAndThreadIds)
           {
-            processLabel = processLabel + $" ({chromeProcessType.Type})";
+            processLabel = processLabel + $" ({processId})";
           }
+          sampleProto.LocationId.Add(
+            GetPseudoLocationId(processId, processName, objectAddress, processLabel));
         }
-        if (_options.IncludeProcessIds || _options.IncludeProcessAndThreadIds)
-        {
-          processLabel = processLabel + $" ({processId})";
-        }
-        sampleProto.LocationId.Add(
-          GetPseudoLocationId(processId, processName, objectAddress, processLabel));
 
         _profile.Sample.Add(sampleProto);
       }
@@ -548,6 +553,7 @@ namespace IdleWakeups
       public long ContextSwitchDPCCount { get; set; }
       public int ProcessId { get; set; }
       public string ProcessName { get; set; }
+      public string WakerProcessName { get; set; }
       public Address ObjectAddress { get; set; }
       public Address ThreadStartAddress { get; set; }
       public ChromeProcessType ProcessType { get; set; }
