@@ -151,12 +151,12 @@ namespace IdleWakeups
 
         if (switchOutImageName == "Idle")
         {
-          // This context switch fulfiles the conditions of being categorized as an idle wakeup.
+          // Current scope represents an idle wakeup:
+
+          // This context switch fulfills the conditions of being categorized as an idle wakeup.
           // Note that more than one process can be included in the process filter but chrome.exe
           // is default.
           _filteredProcessIdleContextSwitch++;
-
-          var switchInThreadId = contextSwitch.SwitchIn.ThreadId;
 
           // Stack of the thread switching in: the stack of the woken thread, which is both where
           // it resumes execution after the context switch, and where it was when its execution was
@@ -172,6 +172,7 @@ namespace IdleWakeups
           // Get the list of frames in the stack.
           var wakerThreadStackFrames = sample.ReadyThreadStack?.Frames;
 
+          var switchInThreadId = contextSwitch.SwitchIn.ThreadId;
           IdleWakeup iwakeup;
           if (!_idleWakeupsByThreadId.TryGetValue(switchInThreadId, out iwakeup))
           {
@@ -187,7 +188,6 @@ namespace IdleWakeups
             iwakeup.ThreadStartAddress = contextSwitch.SwitchIn.Thread.StartAddress;
             var commandLine = contextSwitch.SwitchIn.Process.CommandLine;
             iwakeup.ProcessName = switchInImageName;
-            iwakeup.WakerProcessName = wakerProcessImageName;
             iwakeup.ObjectAddress = contextSwitch.SwitchIn.Process.ObjectAddress;
             if (switchInImageName == "chrome.exe")
             {
@@ -240,9 +240,9 @@ namespace IdleWakeups
             }
             stackFrames.Stack = wakerThreadStackFrames;
             iwakeup.WakerThreadStacks[wakerThreadStackKey] = stackFrames;
-          }
+          }          
 
-          // Store all aquired information about the idle wakeup in a dictionary with thread ID
+          // Store all acquired information about the idle wakeup in a dictionary with thread ID
           // as key and the IdleWakeup structure as value.
           _idleWakeupsByThreadId[switchInThreadId] = iwakeup;
 
@@ -500,9 +500,8 @@ namespace IdleWakeups
           }
         }
 
-        // TODO(henrikand): improve this
-        if (type == ThreadStackTypes.Woken ||
-            type == ThreadStackTypes.Waker && idleWakeup.WakerProcessName == "chrome.exe")
+        // TODO(henrikand): improve this!
+        if (type == ThreadStackTypes.Woken)
         {
           // Add thread name and possibly also thread id as label.
           string processName = idleWakeup.ProcessName;
@@ -554,10 +553,9 @@ namespace IdleWakeups
       public long ContextSwitchDPCCount { get; set; }
       public int ProcessId { get; set; }
       public string ProcessName { get; set; }
-      public string WakerProcessName { get; set; }
+      public ChromeProcessType ProcessType { get; set; }
       public Address ObjectAddress { get; set; }
       public Address ThreadStartAddress { get; set; }
-      public ChromeProcessType ProcessType { get; set; }
       public string ThreadName { get; set; }
       public Dictionary<string, StackFrames> WakerThreadStacks { get; set; }
       public Dictionary<string, StackFrames> WokenThreadStacks { get; set; }
@@ -834,7 +832,7 @@ namespace IdleWakeups
 
     // Function: A program function as defined in the program source. It has a unique nonzero id,
     // referenced from the location lines. It contains a human-readable name for the function
-    // (eg a C++ demangled name), a system name (eg a C++ mangled name), the name of the
+    // (e.g. a C++ demangled name), a system name (e.g. a C++ mangled name), the name of the
     // corresponding source file, and other function attributes.
     private ulong GetFunctionId(string imageName, string functionName, string sourceFileName = null!)
     {
