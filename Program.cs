@@ -63,6 +63,9 @@ namespace IdleWakeups
             new Example("Show summary of idle wakeup statistics but don't export to pprof",
                         new UnParserSettings { PreferShortName = false },
                         new Options { etlFileName = "trace.etl", writeSummary = true, exportToPprof = false }),
+            new Example("Reduce time to load symbols by reading from symbol cache which already contains symbols",
+                        new UnParserSettings { PreferShortName = false },
+                        new Options { etlFileName = "trace.etl",  loadFromSymCache = true}),
           };
 
       [Value(0, MetaName = "etlFileName", Required = true, HelpText = "ETL trace file name.")]
@@ -112,6 +115,10 @@ namespace IdleWakeups
       [Option("loadSymbols", Required = false, Default = true, SetName = "pprof",
               HelpText = "Whether symbols should be loaded.")]
       public bool? loadSymbols { get; set; }
+
+      [Option("loadFromSymCache", Required = false, Default = false, SetName = "pprof",
+              HelpText = "Loads symbols from cache where processed symbols are stored.")]
+      public bool loadFromSymCache { get; set; }
 
       [Option("exportToPprof", Required = false, Default = true, SetName = "pprof",
               HelpText = "Whether results shall be exported to a gzipped pprof profile.")]
@@ -165,33 +172,6 @@ namespace IdleWakeups
 
         trace.Process();
 
-        /*
-        if (opts.loadSymbols ?? true)
-        {
-          ISymbolDataSource symbolData = pendingSymbolData.Result;
-          var symbolProgress = new Progress<SymbolLoadingProgress>(progress =>
-          {
-            Console.Write("\r{0:P} {1} of {2} symbols processed ({3} loaded)",
-                          (double)progress.ImagesProcessed / progress.ImagesTotal,
-                          progress.ImagesProcessed,
-                          progress.ImagesTotal,
-                          progress.ImagesLoaded);
-          });
-          symbolData.LoadSymbolsAsync(
-              SymCachePath.Automatic, SymbolPath.Automatic, symbolProgress)
-              .GetAwaiter().GetResult();
-        }
-        */
-
-        if (opts.loadSymbols ?? true)
-        {
-          var symbolData = pendingSymbolData.Result;
-          symbolData.LoadSymbolsForConsoleAsync(SymCachePath.Automatic).GetAwaiter().GetResult();
-          // Provided no output while loading.
-          // symbolData.LoadSymbolsAsync(SymCachePath.Automatic).GetAwaiter().GetResult();
-          Console.WriteLine();
-        }
-
         if (opts.listProcesses)
         {
           // Skip the analysis for this option. Only print out the unique process names and then quit.
@@ -220,6 +200,29 @@ namespace IdleWakeups
           return;
         }
 
+        if (!opts.loadFromSymCache && (opts.loadSymbols ?? true))
+        {
+          ISymbolDataSource symbolData = pendingSymbolData.Result;
+          var symbolProgress = new Progress<SymbolLoadingProgress>(progress =>
+          {
+            Console.Write("\r{0:P} {1} of {2} symbols processed ({3} loaded)",
+                          (double)progress.ImagesProcessed / progress.ImagesTotal,
+                          progress.ImagesProcessed,
+                          progress.ImagesTotal,
+                          progress.ImagesLoaded);
+          });
+          symbolData.LoadSymbolsAsync(
+              SymCachePath.Automatic, SymbolPath.Automatic, symbolProgress)
+              .GetAwaiter().GetResult();
+        }
+
+        if (opts.loadFromSymCache && (opts.loadSymbols ?? true))
+        {
+          var symbolData = pendingSymbolData.Result;
+          symbolData.LoadSymbolsForConsoleAsync(SymCachePath.Automatic).GetAwaiter().GetResult();
+          Console.WriteLine();
+        }
+
         var cpuSchedData = pendingCpuSchedulingData.Result;
 
         var profileOpts = new ProfileAnalyzer.Options();
@@ -245,11 +248,11 @@ namespace IdleWakeups
 
         for (var i = 0; i < cpuSchedData.ThreadActivity.Count; i++)
         {
-          if (i % 100 == 0 && opts.verboseOutput)
+          if (i % 100 == 0)
           {
             var samples = cpuSchedData.ThreadActivity.Count;
             double percent = (double)i / samples;
-            WriteVerbose($"\r{percent:P} {i} of {samples} samples processed");
+            Console.Write($"\r{percent:P} {i} of {samples} samples processed");
           }
 
           // Get element from a list of merged CpuTimeSlices and ReadyThreadEvents.
@@ -276,31 +279,16 @@ namespace IdleWakeups
         {
           outputSize = profileAnalyzer.WritePprof(opts.outputFileName);
         }
+        Console.WriteLine($"Wrote {outputSize:N0} bytes to {opts.outputFileName}");
+        Console.WriteLine();
 
         if (opts.verboseOutput)
         {
-          WriteLineVerbose($"Wrote {outputSize:N0} bytes to {opts.outputFileName}");
-          Console.WriteLine();
-
           watch.Stop();
-          WriteLineVerbose($"Execution time: {watch.ElapsedMilliseconds} ms");
+          Console.WriteLine($"Execution time: {watch.ElapsedMilliseconds} ms");
           Console.WriteLine();
         }
       }
-    }
-
-
-    private static void WriteVerbose(string message)
-    {
-      Console.ForegroundColor = ConsoleColor.Green;
-      Console.Write(message);
-      Console.ForegroundColor = ConsoleColor.White;
-    }
-    private static void WriteLineVerbose(string message)
-    {
-      Console.ForegroundColor = ConsoleColor.Green;
-      Console.WriteLine(message);
-      Console.ForegroundColor = ConsoleColor.White;
     }
   }
 }
