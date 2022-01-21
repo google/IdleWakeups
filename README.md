@@ -47,6 +47,10 @@ Show summary of idle wakeup statistics but don't export to pprof:
 
     IdleWakeups --exportToPprof False --writeSummary trace.etl
 
+Reduce time to load symbols by reading from symbol cache which already contains symbols:
+
+    IdleWakeups --loadFromSymCache trace.etl
+
 ## Command line flags
 
     -o, --outputFileName            (Default: profile.pb.gz) Output file name for gzipped pprof
@@ -77,6 +81,9 @@ Show summary of idle wakeup statistics but don't export to pprof:
     -s, --writeSummary              (Default: false) Writes a summary after analysis has completed.
                                     
     --loadSymbols                   (Default: true) Whether symbols should be loaded.
+
+    --loadFromSymCache              (Default: false) Loads symbols from cache where processed
+                                    symbols are stored.
 
     --exportToPprof                 (Default: true) Whether results shall be exported to a gzipped
                                     pprof profile.
