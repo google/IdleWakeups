@@ -33,10 +33,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-
 using CommandLine;
 using CommandLine.Text;
-
 using Microsoft.Windows.EventTracing;
 using Microsoft.Windows.EventTracing.Symbols;
 
@@ -50,69 +48,84 @@ namespace IdleWakeups
       public static IEnumerable<Example> Examples =>
 #pragma warning disable CS8618
           new List<Example>() {
-            new Example("Export idlewakeup callstacks to specified pprof profile using default options",
+            new Example("Export idle wakeup callstacks to specified pprof profile using default options",
                         new UnParserSettings { PreferShortName = true },
                         new Options { etlFileName = "trace.etl", outputFileName = "profile.pb.gz" }),
-            new Example("Export idlewakeup callstacks from all processes from 20s to 30s to default pprof profile",
+            new Example("Export idle wakeup callstacks from all processes from 20s to 30s to default pprof profile",
                         new UnParserSettings { PreferShortName = true },
                         new Options { etlFileName = "trace.etl", processFilter = "*", timeStart = 20, timeEnd = 30 }),
-            new Example("Export idlewakeup callstacks from specified process names",
+            new Example("Export idle wakeup callstacks from specified process names",
                         new UnParserSettings { PreferShortName = true },
                         new Options { etlFileName = "trace.etl", processFilter = "audiodg.exe,dwm.exe" }),
-            new Example("Export idlewakeup callstacks and thread/process ids",
+            new Example("Export idle wakeup callstacks and thread/process ids",
                         new UnParserSettings { PreferShortName = true },
                         new Options { etlFileName = "trace.etl", includeProcessAndThreadIds = true }),
+            new Example("Show summary of idle wakeup statistics but don't export to pprof",
+                        new UnParserSettings { PreferShortName = false },
+                        new Options { etlFileName = "trace.etl", writeSummary = true, exportToPprof = false }),
           };
 
       [Value(0, MetaName = "etlFileName", Required = true, HelpText = "ETL trace file name.")]
       public string etlFileName { get; set; }
 
-      [Option('o', "outputFileName", Required = false, Default = "profile.pb.gz",
+      [Option('o', "outputFileName", Required = false, Default = "profile.pb.gz", SetName = "pprof",
               HelpText = "Output file name for gzipped pprof profile.")]
       public string outputFileName { get; set; }
 
-      [Option("listProcesses", Required = false, Default = false, SetName = "processes",
-              HelpText = "Whether all process names (unique) shall be printed out instead of running an analysis.")]
-      public bool listProcesses { get; set; }
-
-      [Option('p', "processFilter", Required = false, Default = "chrome.exe", SetName = "cpu",
+      [Option('p', "processFilter", Required = false, Default = "chrome.exe", SetName = "pprof",
               HelpText = "Filter for process names (comma-separated) to be included in the analysis. "
                          + "All processes will be analyzed if set to *.")]
       public string processFilter { get; set; }
 
-      [Option("timeStart", Required = false, Default = null, SetName = "cpu",
+      [Option("includeInlinedFunctions", Required = false, Default = false, SetName = "pprof",
+             HelpText = "Whether inlined functions should be included in the exported profile (slow).")]
+      public bool includeInlinedFunctions { get; set; }
+
+      [Option("stripSourceFileNamePrefix", Required = false, Default = @"^c:/b/s/w/ir/cache/builder/", SetName = "pprof",
+              HelpText = "Prefix regex to strip out of source file names in the exported profile.")]
+      public string stripSourceFileNamePrefix { get; set; }
+
+      [Option("timeStart", Required = false, Default = null, SetName = "pprof",
               HelpText = "Start of time range to analyze in seconds")]
       public decimal? timeStart { get; set; }
 
-      [Option("timeEnd", Required = false, Default = null, SetName = "cpu",
+      [Option("timeEnd", Required = false, Default = null, SetName = "pprof",
               HelpText = "End of time range to analyze in seconds")]
       public decimal? timeEnd { get; set; }
 
-      [Option("includeProcessIds", Required = false, Default = false,
-              HelpText = "Whether process ids are included in the exported profile.")]
+      [Option("includeProcessIds", Required = false, Default = false, SetName = "pprof",
+              HelpText = "Includes process ids in the exported profile.")]
       public bool includeProcessIds { get; set; }
 
-      [Option("includeProcessAndThreadIds", Required = false, Default = false,
-              HelpText = "Whether process and thread ids are included in the exported profile.")]
+      [Option("includeProcessAndThreadIds", Required = false, Default = false, SetName = "pprof",
+              HelpText = "Includes process and thread ids in the exported profile.")]
       public bool includeProcessAndThreadIds { get; set; }
 
-      [Option("splitChromeProcesses", Required = false, Default = true,
-              HelpText = "Whether chrome.exe processes are split by type (parsed from command line).")]
+      [Option("splitChromeProcesses", Required = false, Default = true, SetName = "pprof",
+              HelpText = "Splits chrome.exe processes by type in the exported profile.")]
       public bool splitChromeProcesses { get; set; }
 
-      [Option('s', "printSummary", Required = false, Default = false, SetName = "cpu",
-              HelpText = "Whether a summary shall be written out after the analysis is completed.")]
-      public bool printSummary { get; set; }
+      [Option('s', "writeSummary", Required = false, Default = false, SetName = "pprof",
+              HelpText = "Writes a summary after analysis has completed.")]
+      public bool writeSummary { get; set; }
 
-      [Option("loadSymbols", Required = false, Default = true, SetName = "cpu",
+      [Option("loadSymbols", Required = false, Default = true, SetName = "pprof",
               HelpText = "Whether symbols should be loaded.")]
       public bool? loadSymbols { get; set; }
 
-      [Option('t', "tabbed", Required = false, Default = false, SetName = "cpu",
+      [Option("exportToPprof", Required = false, Default = true, SetName = "pprof",
+              HelpText = "Whether results shall be exported to a gzipped pprof profile.")]
+      public bool? exportToPprof { get; set; }
+
+      [Option("listProcesses", Required = false, Default = false, SetName = "standalone",
+             HelpText = "Whether all process names (unique) shall be printed out instead of running an analysis.")]
+      public bool listProcesses { get; set; }
+
+      [Option('t', "tabbed", Required = false, Default = false, SetName = "pprof",
               HelpText = "Print results as a tab-separated grid.")]
       public bool printTabbed { get; set; }
 
-      [Option('v', "verboseOutput", Required = false, Default = false, SetName = "cpu",
+      [Option('v', "verboseOutput", Required = false, Default = false, SetName = "pprof",
               HelpText = "Set output to verbose messages.")]
       public bool verboseOutput { get; set; }
     }
@@ -152,10 +165,30 @@ namespace IdleWakeups
 
         trace.Process();
 
+        /*
+        if (opts.loadSymbols ?? true)
+        {
+          ISymbolDataSource symbolData = pendingSymbolData.Result;
+          var symbolProgress = new Progress<SymbolLoadingProgress>(progress =>
+          {
+            Console.Write("\r{0:P} {1} of {2} symbols processed ({3} loaded)",
+                          (double)progress.ImagesProcessed / progress.ImagesTotal,
+                          progress.ImagesProcessed,
+                          progress.ImagesTotal,
+                          progress.ImagesLoaded);
+          });
+          symbolData.LoadSymbolsAsync(
+              SymCachePath.Automatic, SymbolPath.Automatic, symbolProgress)
+              .GetAwaiter().GetResult();
+        }
+        */
+
         if (opts.loadSymbols ?? true)
         {
           var symbolData = pendingSymbolData.Result;
           symbolData.LoadSymbolsForConsoleAsync(SymCachePath.Automatic).GetAwaiter().GetResult();
+          // Provided no output while loading.
+          // symbolData.LoadSymbolsAsync(SymCachePath.Automatic).GetAwaiter().GetResult();
           Console.WriteLine();
         }
 
@@ -191,11 +224,13 @@ namespace IdleWakeups
 
         var profileOpts = new ProfileAnalyzer.Options();
         profileOpts.EtlFileName = opts.etlFileName;
+        profileOpts.IncludeInlinedFunctions = opts.includeInlinedFunctions;
+        profileOpts.StripSourceFileNamePrefix = opts.stripSourceFileNamePrefix;
+        profileOpts.TimeStart = opts.timeStart ?? 0;
+        profileOpts.TimeEnd = opts.timeEnd ?? decimal.MaxValue;
         profileOpts.IncludeProcessIds = opts.includeProcessIds;
         profileOpts.IncludeProcessAndThreadIds = opts.includeProcessAndThreadIds;
         profileOpts.SplitChromeProcesses = opts.splitChromeProcesses;
-        profileOpts.TimeStart = opts.timeStart ?? 0;
-        profileOpts.TimeEnd = opts.timeEnd ?? decimal.MaxValue;
         profileOpts.Tabbed = opts.printTabbed;
         profileOpts.Verbose = opts.verboseOutput;
 
@@ -210,30 +245,58 @@ namespace IdleWakeups
 
         for (var i = 0; i < cpuSchedData.ThreadActivity.Count; i++)
         {
-          profileAnalyzer.AddSample(cpuSchedData.ThreadActivity[i]);
-        }
+          if (i % 100 == 0 && opts.verboseOutput)
+          {
+            var samples = cpuSchedData.ThreadActivity.Count;
+            double percent = (double)i / samples;
+            WriteVerbose($"\r{percent:P} {i} of {samples} samples processed");
+          }
 
+          // Get element from a list of merged CpuTimeSlices and ReadyThreadEvents.
+          var threadActivity = cpuSchedData.ThreadActivity[i];
+          if (opts.writeSummary)
+          {
+            profileAnalyzer.AddSummarySample(threadActivity);
+          }
+          if (opts.exportToPprof ?? true)
+          {
+            profileAnalyzer.AddPprofSample(threadActivity);
+          }
+        }
+        Console.WriteLine();
         Console.WriteLine();
 
-        if (opts.printSummary)
+        if (opts.writeSummary)
         {
           profileAnalyzer.WriteSummary();
         }
 
-        long outputSize = profileAnalyzer.WritePprof(opts.outputFileName);
-        Console.WriteLine("Wrote {0:N0} bytes to {1}", outputSize, opts.outputFileName);
-        Console.WriteLine();
+        long outputSize = 0;
+        if (opts.exportToPprof ?? true)
+        {
+          outputSize = profileAnalyzer.WritePprof(opts.outputFileName);
+        }
 
         if (opts.verboseOutput)
         {
+          WriteLineVerbose($"Wrote {outputSize:N0} bytes to {opts.outputFileName}");
+          Console.WriteLine();
+
           watch.Stop();
-          WriteVerbose($"Execution time: {watch.ElapsedMilliseconds} ms");
+          WriteLineVerbose($"Execution time: {watch.ElapsedMilliseconds} ms");
           Console.WriteLine();
         }
       }
     }
 
+
     private static void WriteVerbose(string message)
+    {
+      Console.ForegroundColor = ConsoleColor.Green;
+      Console.Write(message);
+      Console.ForegroundColor = ConsoleColor.White;
+    }
+    private static void WriteLineVerbose(string message)
     {
       Console.ForegroundColor = ConsoleColor.Green;
       Console.WriteLine(message);

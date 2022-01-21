@@ -43,35 +43,46 @@ Export idlewakeup callstacks and thread/process ids:
 
     IdleWakeups --includeProcessAndThreadIds trace.etl
 
+Show summary of idle wakeup statistics but don't export to pprof:
+
+    IdleWakeups --exportToPprof False --writeSummary trace.etl
+
 ## Command line flags
 
     -o, --outputFileName            (Default: profile.pb.gz) Output file name for gzipped pprof
                                     profile.
 
-    --listProcesses                 (Default: false) Whether all process names (unique) shall be
-                                    printed out instead of running an analysis.
-
     -p, --processFilter             (Default: chrome.exe) Filter for process names (comma-separated)
                                     to be included in the analysis. All processes will be analyzed
                                     if set to *.
+
+    --includeInlinedFunctions       (Default: false) Whether inlined functions should be included
+                                    in the exported profile (slow).
+
+    --stripSourceFileNamePrefix     (Default: ^c:/b/s/w/ir/cache/builder/) Prefix regex to strip
+                                    out of source file names in the exported profile.
 
     --timeStart                     Start of time range to analyze in seconds
 
     --timeEnd                       End of time range to analyze in seconds
 
-    --includeProcessIds             (Default: false) Whether process ids are included in the
+    --includeProcessIds             (Default: false) Includes process ids in the exported profile.
+
+    --includeProcessAndThreadIds    (Default: false)  Includes process and thread ids in the
                                     exported profile.
 
-    --includeProcessAndThreadIds    (Default: false) Whether process and thread ids are included in
-                                    the exported profile.
+    --splitChromeProcesses          (Default: true) Splits chrome.exe processes by type in the
+                                    exported profile.
 
-    --splitChromeProcesses          (Default: true) Whether chrome.exe processes are split by type
-                                    (parsed from command line).
-
-    -s, --printSummary              (Default: false) Whether a summary shall be printed after the
-                                    analysis is completed.
+    -s, --writeSummary              (Default: false) Writes a summary after analysis has completed.
                                     
     --loadSymbols                   (Default: true) Whether symbols should be loaded.
+
+    --exportToPprof                 (Default: true) Whether results shall be exported to a gzipped
+                                    pprof profile.
+
+    --listProcesses                 (Default: false) Whether all process names (unique) shall be
+                                    printed out instead of running an analysis.
 
     -t, --tabbed                    (Default: false) Print results as a tab-separated grid.
 
