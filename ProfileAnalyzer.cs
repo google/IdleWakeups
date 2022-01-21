@@ -32,12 +32,14 @@ namespace IdleWakeups
     public struct Options
     {
       public string EtlFileName { get; set; }
+      public HashSet<string> ProcessFilterSet { get; set; }
+      public bool IncludeInlinedFunctions { get; set; }
+      public string StripSourceFileNamePrefix { get; set; }
+      public decimal TimeStart { get; set; }
+      public decimal TimeEnd { get; set; }
       public bool IncludeProcessIds { get; set; }
       public bool IncludeProcessAndThreadIds { get; set; }
       public bool SplitChromeProcesses { get; set; }
-      public decimal TimeStart { get; set; }
-      public decimal TimeEnd { get; set; }
-      public HashSet<string> ProcessFilterSet { get; set; }
       public bool Tabbed { get; set; }
       public bool Verbose { get; set; }
     }
@@ -46,9 +48,7 @@ namespace IdleWakeups
     {
       _options = options;
 
-      // TODO(henrika): add to options
-      const string stripSourceFileNamePrefix = @"^c:/b/s/w/ir/cache/builder/";
-      _stripSourceFileNamePrefixRegex = new Regex(stripSourceFileNamePrefix,
+      _stripSourceFileNamePrefixRegex = new Regex(_options.StripSourceFileNamePrefix,
                                                   RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
       _strings = new Dictionary<string, long>();
@@ -62,8 +62,7 @@ namespace IdleWakeups
       _functions = new Dictionary<Function, ulong>();
       _nextFunctionId = 1;
 
-      // When a thread is off-CPU sleeping, it is eventually woken up. This is performed by
-      // another thread, the waker thread.
+      // We define six different types in the profile:
 
       // Counts all callstacks for woken threads related to idlewakeups where a context switch
       // between an (old) idle thread and (new) thread in e.g. Chrome has taken place.
@@ -72,15 +71,15 @@ namespace IdleWakeups
       iWakeupCountValueType.Unit = GetStringId("count");
       _profile.SampleType.Add(iWakeupCountValueType);
 
-      // Counts all woken callstacks where the waker thread was not doing DPC.
-      iWakeupCountValueType = new pb.ValueType();
-      iWakeupCountValueType.Type = GetStringId("woken_no_dpc");
-      iWakeupCountValueType.Unit = GetStringId("count");
-      _profile.SampleType.Add(iWakeupCountValueType);
-
       // Counts all woken callstacks where the waker thread was doing DPC.
       iWakeupCountValueType = new pb.ValueType();
       iWakeupCountValueType.Type = GetStringId("woken_dpc");
+      iWakeupCountValueType.Unit = GetStringId("count");
+      _profile.SampleType.Add(iWakeupCountValueType);
+
+      // Counts all woken callstacks where the waker thread was not doing DPC.
+      iWakeupCountValueType = new pb.ValueType();
+      iWakeupCountValueType.Type = GetStringId("woken_no_dpc");
       iWakeupCountValueType.Unit = GetStringId("count");
       _profile.SampleType.Add(iWakeupCountValueType);
 
@@ -92,20 +91,20 @@ namespace IdleWakeups
       iWakeupCountValueType.Unit = GetStringId("count");
       _profile.SampleType.Add(iWakeupCountValueType);
 
+      // Counts all waker callstacks where the waker thread was doing DPC.
+      iWakeupCountValueType = new pb.ValueType();
+      iWakeupCountValueType.Type = GetStringId("waker_dpc");
+      iWakeupCountValueType.Unit = GetStringId("count");
+      _profile.SampleType.Add(iWakeupCountValueType);
+
       // Counts all waker callstacks where the waker thread was not doing DPC.
       iWakeupCountValueType = new pb.ValueType();
       iWakeupCountValueType.Type = GetStringId("waker_no_dpc");
       iWakeupCountValueType.Unit = GetStringId("count");
       _profile.SampleType.Add(iWakeupCountValueType);
-
-      // Counts all waker callstacks where the waker thread was not doing DPC.
-      iWakeupCountValueType = new pb.ValueType();
-      iWakeupCountValueType.Type = GetStringId("waker_dpc");
-      iWakeupCountValueType.Unit = GetStringId("count");
-      _profile.SampleType.Add(iWakeupCountValueType);
     }
 
-    public void AddSample(ICpuThreadActivity sample)
+    public void AddSummarySample(ICpuThreadActivity sample)
     {
       // A context switch is the act of moving the New Thread from Ready to Running, and moving
       // the Old Thread from Running to some other state, on a particular CPU. We are focusing on
@@ -240,7 +239,7 @@ namespace IdleWakeups
             }
             stackFrames.Stack = wakerThreadStackFrames;
             iwakeup.WakerThreadStacks[wakerThreadStackKey] = stackFrames;
-          }          
+          }
 
           // Store all acquired information about the idle wakeup in a dictionary with thread ID
           // as key and the IdleWakeup structure as value.
@@ -255,6 +254,189 @@ namespace IdleWakeups
             _previousCStates[prevCState.Value] = cStateCount;
           }
         }  // if (switchOutImageName == "Idle")
+      }
+    }
+
+    public void AddPprofSample(ICpuThreadActivity sample)
+    {
+      var contextSwitch = sample.SwitchIn?.ContextSwitch;
+      if (contextSwitch == null)
+        return;
+
+      var timestamp = contextSwitch.Timestamp.RelativeTimestamp.TotalSeconds;
+      if (timestamp < _options.TimeStart || timestamp > _options.TimeEnd)
+        return;
+
+      var switchInImageName = contextSwitch.SwitchIn.Process.ImageName;
+
+      if (_options.ProcessFilterSet == null ||
+          _options.ProcessFilterSet.Contains(switchInImageName))
+      {
+        _wallTimeStart = Math.Min(_wallTimeStart, timestamp);
+        _wallTimeEnd = Math.Max(_wallTimeEnd, timestamp);
+
+        var switchOutImageName = contextSwitch.SwitchOut.Process.ImageName;
+        if (switchOutImageName != "Idle")
+          return;
+
+        // The scope below represents an idle wakeup.
+
+        // A ready thread event occurs when a previously blocked thread is unblocked by the actions
+        // of another thread. This previously blocked thread is said to have been 'readied' by this
+        // other thread.
+
+        // If the waker thread is executing a deferred procedure it means that the woken thread
+        // was not woken by a process; it was woken by a DPC call (doing work on behalf of an
+        // interrupt) that has hijacked a process temporarily.
+        bool wakerThreadIsExecutingDPC = false;
+        // Get the process that made this thread become eligible to be switched in, if available.
+        var wakerProcessImageName = sample.ReadyingProcess?.ImageName ?? "Unknown";
+        if (sample.ReadyThreadEvent?.IsExecutingDeferredProcedureCall ?? false)
+        {
+          wakerProcessImageName = "DPC";
+          wakerThreadIsExecutingDPC = true;
+        }
+
+        var sampleProto = new pb.Sample();
+
+        // Get the stack of the woken thread.
+        var wokenThreadStack = contextSwitch.SwitchIn.Stack;
+        if (wokenThreadStack != null && wokenThreadStack.Frames.Count != 0)
+        {
+          sampleProto.Value.Add(1);
+          sampleProto.Value.Add(wakerThreadIsExecutingDPC ? 1 : 0);
+          sampleProto.Value.Add(!wakerThreadIsExecutingDPC ? 1 : 0);
+          sampleProto.Value.Add(0);
+          sampleProto.Value.Add(0);
+          sampleProto.Value.Add(0);
+
+          var processId = sample.Process.Id;
+          // Add the stack as a new sample to the protocol buffer.
+          foreach (var stackFrame in wokenThreadStack.Frames)
+          {
+            if (stackFrame.HasValue && stackFrame.Symbol != null)
+            {
+              sampleProto.LocationId.Add(GetLocationId(stackFrame.Symbol));
+            }
+            else
+            {
+              string imageName = stackFrame.Image?.FileName ?? "<unknown>";
+              string functionLabel = "<unknown>";
+              sampleProto.LocationId.Add(
+                GetPseudoLocationId(processId, imageName, null, functionLabel));
+            }
+          }
+
+          // Add thread name and possibly also thread id as label for the thread switching in.
+          var processName = sample.Process.ImageName;
+          var threadLabel = sample.Thread.Name;
+          var threadId = sample.Thread.Id;
+          var threadStartAddress = sample.Thread?.StartAddress;
+          if (String.IsNullOrEmpty(threadLabel))
+            threadLabel = "anonymous";
+          if (_options.IncludeProcessAndThreadIds)
+          {
+            threadLabel = String.Format("{0} ({1})", threadLabel, threadId);
+          }
+          sampleProto.LocationId.Add(
+            GetPseudoLocationId(processId, processName, threadStartAddress, threadLabel));
+
+          // Add process name, type and possibly id as label depending on current options.
+          var processLabel = processName;
+          var objectAddress = sample.Process.ObjectAddress;
+          if (_options.SplitChromeProcesses && processName == "chrome.exe")
+          {
+            var commandLine = sample.Process.CommandLine;
+            const string kUtilityProcessType = "utility";
+            var chromeProcessType = GetChromeProcessType(commandLine);
+            if (chromeProcessType.Type == kUtilityProcessType)
+            {
+              processLabel = processLabel + $" ({chromeProcessType.SubType})";
+            }
+            else
+            {
+              processLabel = processLabel + $" ({chromeProcessType.Type})";
+            }
+          }
+          if (_options.IncludeProcessIds || _options.IncludeProcessAndThreadIds)
+          {
+            processLabel = processLabel + $" ({processId})";
+          }
+          sampleProto.LocationId.Add(
+            GetPseudoLocationId(processId, processName, objectAddress, processLabel));
+
+          _profile.Sample.Add(sampleProto);
+        }
+
+        // Get the stack of the waker thread (if available).
+        var wakerThreadStack = sample.ReadyThreadStack;
+        if (wakerThreadStack != null && wakerThreadStack.Frames.Count != 0)
+        {
+          sampleProto = new pb.Sample();
+          sampleProto.Value.Add(0);
+          sampleProto.Value.Add(0);
+          sampleProto.Value.Add(0);
+          sampleProto.Value.Add(1);
+          sampleProto.Value.Add(wakerThreadIsExecutingDPC ? 1 : 0);
+          sampleProto.Value.Add(!wakerThreadIsExecutingDPC ? 1 : 0);
+
+          var processId = sample.ReadyingProcess?.Id ?? 0;
+          // Add the stack as a new sample to the protocol buffer.
+          foreach (var stackFrame in wakerThreadStack.Frames)
+          {
+            if (stackFrame.HasValue && stackFrame.Symbol != null)
+            {
+              sampleProto.LocationId.Add(GetLocationId(stackFrame.Symbol));
+            }
+            else
+            {
+              string imageName = stackFrame.Image?.FileName ?? "<unknown>";
+              string functionLabel = "<unknown>";
+              sampleProto.LocationId.Add(
+                GetPseudoLocationId(processId, imageName, null, functionLabel));
+            }
+          }
+
+          // Add thread name and possibly also thread id as label for the waker thread.
+          var processName = wakerProcessImageName;
+          var threadLabel = sample.ReadyingThread?.Name;
+          var threadId = sample.ReadyingThread?.Id ?? 0;
+          var threadStartAddress = sample.ReadyingThread?.StartAddress;
+          if (String.IsNullOrEmpty(threadLabel))
+            threadLabel = "anonymous";
+          if (_options.IncludeProcessAndThreadIds)
+          {
+            threadLabel = String.Format("{0} ({1})", threadLabel, threadId);
+          }
+          sampleProto.LocationId.Add(
+            GetPseudoLocationId(processId, processName, threadStartAddress, threadLabel));
+
+          // Add process name, type and possibly id as label depending on current options.
+          var processLabel = processName;
+          var objectAddress = sample.ReadyingProcess?.ObjectAddress;
+          if (_options.SplitChromeProcesses && processName == "chrome.exe")
+          {
+            var commandLine = sample.Process.CommandLine;
+            const string kUtilityProcessType = "utility";
+            var chromeProcessType = GetChromeProcessType(commandLine);
+            if (chromeProcessType.Type == kUtilityProcessType)
+            {
+              processLabel = processLabel + $" ({chromeProcessType.SubType})";
+            }
+            else
+            {
+              processLabel = processLabel + $" ({chromeProcessType.Type})";
+            }
+          }
+          if (_options.IncludeProcessIds || _options.IncludeProcessAndThreadIds)
+          {
+            processLabel = processLabel + $" ({processId})";
+          }
+          sampleProto.LocationId.Add(
+            GetPseudoLocationId(processId, processName, objectAddress, processLabel));
+
+          _profile.Sample.Add(sampleProto);
+        }
       }
     }
 
@@ -404,29 +586,17 @@ namespace IdleWakeups
       if (_wallTimeStart < _wallTimeEnd)
       {
         var durationMs = (_wallTimeEnd - _wallTimeStart) * 1000;
+        _profile.Comment.Add(GetStringId($"Exported by https://github.com/google/IdleWakeups"));
         var etlFileName = _options.EtlFileName.TrimStart(' ', '.', '\\');
         _profile.Comment.Add(GetStringId($"ETL file: {etlFileName}"));
         _profile.Comment.Add(GetStringId($"Duration (msec): {durationMs:F}"));
         var processFilter = ProcessFilterToString();
         _profile.Comment.Add(GetStringId($"Process filter: {processFilter}"));
-        _profile.Comment.Add(GetStringId($"Context switches (On-CPU): {_filteredProcessContextSwitch}"));
-        _profile.Comment.Add(GetStringId($"Idle wakeups: {_filteredProcessIdleContextSwitch}"));
-        var IdleWakeupsInPercent = 100 * (double)_filteredProcessIdleContextSwitch / _filteredProcessContextSwitch;
-        _profile.Comment.Add(GetStringId($"Idle wakeups (%): {IdleWakeupsInPercent:F}"));
       }
       else
       {
         _profile.Comment.Add(GetStringId("No samples exported"));
       }
-
-      foreach (var tidAndIdleWakeup in _idleWakeupsByThreadId)
-      {
-        AddSamplesToProfile(ThreadStackTypes.Woken, tidAndIdleWakeup);
-        AddSamplesToProfile(ThreadStackTypes.Waker, tidAndIdleWakeup);
-      }
-
-      _profile.Comment.Add(
-        GetStringId($"Exported by https://github.com/google/IdleWakeups from {Path.GetFileName(outputFileName)}"));
 
       using (FileStream output = File.Create(outputFileName))
       {
@@ -440,111 +610,6 @@ namespace IdleWakeups
           }
         }
       }
-    }
-
-    private void AddSamplesToProfile(ThreadStackTypes type, KeyValuePair<int, IdleWakeup> tidAndIdleWakeup)
-    {
-      var threadId = tidAndIdleWakeup.Key;
-      var idleWakeup = tidAndIdleWakeup.Value;
-
-      var processId = idleWakeup.ProcessId;
-      var threadStartAddress = idleWakeup.ThreadStartAddress;
-      var objectAddress = idleWakeup.ObjectAddress;
-
-      // Write callstacks related to all woken or waker threads depending on `type`.
-      Dictionary<string, StackFrames> threadStacks =
-        type == ThreadStackTypes.Woken ? idleWakeup.WokenThreadStacks : idleWakeup.WakerThreadStacks;
-      foreach (var stack in threadStacks.Values)
-      {
-        var stackFrames = stack.Stack;
-        if (stackFrames.Count == 0)
-        {
-          continue;
-        }
-
-        var sampleProto = new pb.Sample();
-        if (type == ThreadStackTypes.Woken)
-        {
-          sampleProto.Value.Add(stack.StackCount);
-          sampleProto.Value.Add(stack.StackCount - stack.StackDPCCount);
-          sampleProto.Value.Add(stack.StackDPCCount);
-          sampleProto.Value.Add(0);
-          sampleProto.Value.Add(0);
-          sampleProto.Value.Add(0);
-        }
-        else
-        {
-          sampleProto.Value.Add(0);
-          sampleProto.Value.Add(0);
-          sampleProto.Value.Add(0);
-          sampleProto.Value.Add(stack.StackCount);
-          sampleProto.Value.Add(stack.StackCount - stack.StackDPCCount);
-          sampleProto.Value.Add(stack.StackDPCCount);
-        }
-
-        foreach (var stackFrame in stackFrames)
-        {
-          if (stackFrame.HasValue && stackFrame.Symbol != null)
-          {
-            // Add valid stack frame to the proto buffer.
-            sampleProto.LocationId.Add(GetLocationId(stackFrame.Symbol));
-          }
-          else
-          {
-            // Current stack frame was invalid, mark it as "unknown" to maintain a correct depth
-            // of the total stack.
-            string imageName = stackFrame.Image?.FileName ?? "<unknown>";
-            string functionLabel = "<unknown>";
-            sampleProto.LocationId.Add(
-              GetPseudoLocationId(processId, imageName, null, functionLabel));
-          }
-        }
-
-        // TODO(henrikand): improve this!
-        if (type == ThreadStackTypes.Woken)
-        {
-          // Add thread name and possibly also thread id as label.
-          string processName = idleWakeup.ProcessName;
-          string threadLabel = idleWakeup.ThreadName;
-          if (String.IsNullOrEmpty(threadLabel))
-            threadLabel = "anonymous";
-          if (_options.IncludeProcessAndThreadIds)
-          {
-            threadLabel = String.Format("{0} ({1})", threadLabel, threadId);
-          }
-          sampleProto.LocationId.Add(
-            GetPseudoLocationId(processId, processName, threadStartAddress, threadLabel));
-
-          // Add process name, type and possibly id as label depending on current options.
-          string processLabel = processName;
-          if (_options.SplitChromeProcesses && processName == "chrome.exe")
-          {
-            const string kUtilityProcessType = "utility";
-            var chromeProcessType = idleWakeup.ProcessType;
-            if (chromeProcessType.Type == kUtilityProcessType)
-            {
-              processLabel = processLabel + $" ({chromeProcessType.SubType})";
-            }
-            else
-            {
-              processLabel = processLabel + $" ({chromeProcessType.Type})";
-            }
-          }
-          if (_options.IncludeProcessIds || _options.IncludeProcessAndThreadIds)
-          {
-            processLabel = processLabel + $" ({processId})";
-          }
-          sampleProto.LocationId.Add(
-            GetPseudoLocationId(processId, processName, objectAddress, processLabel));
-        }
-
-        _profile.Sample.Add(sampleProto);
-      }
-    }
-    private enum ThreadStackTypes
-    {
-      Woken,
-      Waker
     }
 
     private struct IdleWakeup
@@ -733,12 +798,6 @@ namespace IdleWakeups
       return sb.ToString().TrimEnd();
     }
 
-    private void AddLocationsToSample(pb.Sample sampleProto)
-    {
-
-    }
-
-
     // string_table: All strings in the profile are represented as indices into this repeating
     // field. The first string is empty, so index == 0 always represents the empty string.
     private long GetStringId(string str)
@@ -760,7 +819,7 @@ namespace IdleWakeups
     {
       if (stackSymbol.Image == null)
       {
-        // TODO(henrika): resolves some compiler warnings related to nullability of reference
+        // TODO(henrikand): resolves some compiler warnings related to nullability of reference
         // types but I have not seen any error messages printed out so far. Hence, not sure if
         // more work is needed here or not.
         Console.Error.WriteLine("Invalid stack symbol image");
@@ -769,6 +828,7 @@ namespace IdleWakeups
 
       var processId = stackSymbol.Image.ProcessId;
       var imagePath = stackSymbol.Image.Path;
+      var imageName = stackSymbol.Image.FileName;
       var functionAddress = stackSymbol.AddressRange.BaseAddress;
       var functionName = stackSymbol.FunctionName;
 
@@ -784,9 +844,7 @@ namespace IdleWakeups
         locationProto.Id = locationId;
 
         pb.Line line;
-
-        /* TODO(henrika)
-        if (options.includeInlinedFunctions && stackSymbol.InlinedFunctionNames != null)
+        if (_options.IncludeInlinedFunctions && stackSymbol.InlinedFunctionNames != null)
         {
           foreach (var inlineFunctionName in stackSymbol.InlinedFunctionNames)
           {
@@ -795,12 +853,8 @@ namespace IdleWakeups
             locationProto.Line.Add(line);
           }
         }
-        */
-
-        var imageName = stackSymbol.Image.FileName;
-        var sourceFileName = stackSymbol.SourceFileName;
-
         line = new pb.Line();
+        var sourceFileName = stackSymbol.SourceFileName;
         line.FunctionId = GetFunctionId(imageName, functionName, sourceFileName);
         line.Line_ = stackSymbol.SourceLineNumber;
         locationProto.Line.Add(line);
