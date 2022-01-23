@@ -496,7 +496,7 @@ namespace IdleWakeups
         Console.WriteLine(composite,
           key, sep,
           _previousCStates[key], sep,
-          100 * (double)_previousCStates[key] / _filteredProcessContextSwitch);
+          100 * (double)_previousCStates[key] / _filteredProcessIdleContextSwitch);
       }
       WriteHeaderLine(header.Length + 1);
       var totalPreviousCStatesCount = _previousCStates.Sum(x => x.Value);
