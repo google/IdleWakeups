@@ -40,6 +40,7 @@ namespace IdleWakeups
       public bool IncludeProcessIds { get; set; }
       public bool IncludeProcessAndThreadIds { get; set; }
       public bool SplitChromeProcesses { get; set; }
+      public string? PprofComment { get; set; }
       public bool Tabbed { get; set; }
       public bool Verbose { get; set; }
     }
@@ -281,6 +282,8 @@ namespace IdleWakeups
 
         // The scope below represents an idle wakeup.
 
+        _idleWakeups++;
+
         // A ready thread event occurs when a previously blocked thread is unblocked by the actions
         // of another thread. This previously blocked thread is said to have been 'readied' by this
         // other thread.
@@ -362,6 +365,7 @@ namespace IdleWakeups
           {
             processLabel = processLabel + $" ({processId})";
           }
+
           sampleProto.LocationId.Add(
             GetPseudoLocationId(processId, processName, objectAddress, processLabel));
 
@@ -451,10 +455,13 @@ namespace IdleWakeups
         var durationMs = (_wallTimeEnd - _wallTimeStart) * 1000;
         Console.WriteLine("{0,-25}{1}{2:F}", "Duration (msec)", sep, durationMs);
       }
+      var durationInSec = _wallTimeEnd - _wallTimeStart;
       var processFilter = ProcessFilterToString();
       Console.WriteLine("{0,-25}{1}{2}", "Process filter", sep, processFilter);
       Console.WriteLine("{0,-25}{1}{2}", "Context switches (On-CPU)", sep, _filteredProcessContextSwitch);
       Console.WriteLine("{0,-25}{1}{2}", "Idle wakeups", sep, _filteredProcessIdleContextSwitch);
+      Console.WriteLine("{0,-25}{1}{2:F0}", "Idle wakeups/sec", sep, 
+        Math.Round(_filteredProcessIdleContextSwitch / durationInSec, MidpointRounding.AwayFromZero));
       Console.WriteLine("{0,-25}{1}{2:F}", "Idle wakeups (%)",
         sep, 100 * (double)_filteredProcessIdleContextSwitch / _filteredProcessContextSwitch);
       Console.WriteLine();
@@ -531,7 +538,6 @@ namespace IdleWakeups
       Console.WriteLine(header);
       WriteHeaderLine(header.Length + 1);
 
-      var durationInSec = _wallTimeEnd - _wallTimeStart;
       var sortedIdleWakeupsByThreadId = new List<KeyValuePair<int, IdleWakeup>>(_idleWakeupsByThreadId);
       sortedIdleWakeupsByThreadId.Sort((x, y)
           => y.Value.ContextSwitchCount.CompareTo(x.Value.ContextSwitchCount));
@@ -561,6 +567,7 @@ namespace IdleWakeups
       }
 
       var totalContextSwitchCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount);
+      var totalContextSwitchPerSec = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount / durationInSec);
       var totalContextSwitchDPCCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchDPCCount);
       var totalWakerThreadStacksCount = _idleWakeupsByThreadId.Sum(x => x.Value.WakerThreadStacks.Count);
       var totalWokenThreadStacksCount = _idleWakeupsByThreadId.Sum(x => x.Value.WokenThreadStacks.Count);
@@ -573,7 +580,7 @@ namespace IdleWakeups
         "", sep,
         "", sep,
         totalContextSwitchCount, sep,
-        "", sep,
+        Math.Round(totalContextSwitchPerSec, MidpointRounding.AwayFromZero), sep,
         totalContextSwitchDPCCount, sep,
         "", sep,
         "", sep,
@@ -585,13 +592,22 @@ namespace IdleWakeups
     {
       if (_wallTimeStart < _wallTimeEnd)
       {
-        var durationMs = (_wallTimeEnd - _wallTimeStart) * 1000;
+        var durationSec = _wallTimeEnd - _wallTimeStart;
+        var durationMs = durationSec * 1000;
         _profile.Comment.Add(GetStringId($"Exported by https://github.com/google/IdleWakeups"));
         var etlFileName = _options.EtlFileName.TrimStart(' ', '.', '\\');
         _profile.Comment.Add(GetStringId($"ETL file: {etlFileName}"));
         _profile.Comment.Add(GetStringId($"Duration (msec): {durationMs:F}"));
         var processFilter = ProcessFilterToString();
         _profile.Comment.Add(GetStringId($"Process filter: {processFilter}"));
+        _profile.Comment.Add(GetStringId($"Idle wakeups: {_idleWakeups}"));
+        var idleWakeupsPerSec = Math.Round(_idleWakeups / durationSec, MidpointRounding.AwayFromZero);
+        _profile.Comment.Add(GetStringId($"Idle wakeups/sec: {idleWakeupsPerSec:F0}"));
+        var appendComment = _options.PprofComment ?? string.Empty;
+        if (!String.IsNullOrEmpty(appendComment))
+        {
+          _profile.Comment.Add(GetStringId(appendComment));
+        }
       }
       else
       {
@@ -817,15 +833,6 @@ namespace IdleWakeups
     // in the form of lines, and a mapping id that points to a binary.
     private ulong GetLocationId(IStackSymbol stackSymbol)
     {
-      if (stackSymbol.Image == null)
-      {
-        // TODO(henrikand): resolves some compiler warnings related to nullability of reference
-        // types but I have not seen any error messages printed out so far. Hence, not sure if
-        // more work is needed here or not.
-        Console.Error.WriteLine("Invalid stack symbol image");
-        return 0;
-      }
-
       var processId = stackSymbol.Image.ProcessId;
       var imagePath = stackSymbol.Image.Path;
       var imageName = stackSymbol.Image.FileName;
@@ -924,8 +931,16 @@ namespace IdleWakeups
 
     long _filteredProcessIdleContextSwitch;
 
+    long _idleWakeups;
+
     decimal _wallTimeStart = decimal.MaxValue;
     decimal _wallTimeEnd = 0;
+
+    Dictionary<int, IdleWakeup> _idleWakeupsByThreadId = new Dictionary<int, IdleWakeup>();
+
+    Dictionary<string, long> _filteredProcessWakerProcesses = new Dictionary<string, long>();
+
+    Dictionary<int, long> _previousCStates = new Dictionary<int, long>();
 
     Dictionary<string, long> _strings;
     long _nextStringId;
@@ -937,12 +952,6 @@ namespace IdleWakeups
     ulong _nextFunctionId;
 
     Regex _stripSourceFileNamePrefixRegex;
-
-    Dictionary<int, IdleWakeup> _idleWakeupsByThreadId = new Dictionary<int, IdleWakeup>();
-
-    Dictionary<string, long> _filteredProcessWakerProcesses = new Dictionary<string, long>();
-
-    Dictionary<int, long> _previousCStates = new Dictionary<int, long>();
 
     pb.Profile _profile = new pb.Profile();
   }

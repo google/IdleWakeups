@@ -124,7 +124,11 @@ namespace IdleWakeups
               HelpText = "Whether results shall be exported to a gzipped pprof profile.")]
       public bool? exportToPprof { get; set; }
 
-      [Option("listProcesses", Required = false, Default = false, SetName = "standalone",
+      [Option("pprofComment", Required = false, Default = "", SetName = "pprof",
+             HelpText = "Free-form annotation to add to the exported profile as comment.")]
+      public string? pprofComment { get; set; }
+
+     [Option("listProcesses", Required = false, Default = false, SetName = "standalone",
              HelpText = "Whether all process names (unique) shall be printed out instead of running an analysis.")]
       public bool listProcesses { get; set; }
 
@@ -234,6 +238,7 @@ namespace IdleWakeups
         profileOpts.IncludeProcessIds = opts.includeProcessIds;
         profileOpts.IncludeProcessAndThreadIds = opts.includeProcessAndThreadIds;
         profileOpts.SplitChromeProcesses = opts.splitChromeProcesses;
+        profileOpts.PprofComment = opts.pprofComment;
         profileOpts.Tabbed = opts.printTabbed;
         profileOpts.Verbose = opts.verboseOutput;
 

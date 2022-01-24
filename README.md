@@ -27,19 +27,19 @@ Build the provided Visual Studio Solution with VS 2022.
 
 ## Examples
 
-Export idlewakeup callstacks found in `trace.etl` to specified pprof profile using default options:
+Export idle wakeup callstacks found in `trace.etl` to specified pprof profile using default options:
 
     IdleWakeups -o profile.pb.gz trace.etl
   
-Export idlewakeup callstacks from all processes from 20s to 30s to default pprof profile:
+Export idle wakeup callstacks from all processes from 20s to 30s to default pprof profile:
 
     IdleWakeups -p * --timeEnd 30 --timeStart 20 trace.etl
 
-Export idlewakeup callstacks from specified process names:
+Export idle wakeup callstacks from specified process names:
 
     IdleWakeups -p audiodg.exe,dwm.exe trace.etl
 
-Export idlewakeup callstacks and thread/process ids:
+Export idle wakeup callstacks and thread/process ids:
 
     IdleWakeups --includeProcessAndThreadIds trace.etl
 
@@ -87,6 +87,9 @@ Reduce time to load symbols by reading from symbol cache which already contains 
 
     --exportToPprof                 (Default: true) Whether results shall be exported to a gzipped
                                     pprof profile.
+
+    --pprofComment                  (Default: ) Free-form annotation to add to the exported profile
+                                    as comment.
 
     --listProcesses                 (Default: false) Whether all process names (unique) shall be
                                     printed out instead of running an analysis.
