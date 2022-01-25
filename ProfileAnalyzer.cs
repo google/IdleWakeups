@@ -111,7 +111,9 @@ namespace IdleWakeups
       // the Old Thread from Running to some other state, on a particular CPU. We are focusing on
       // a special type of context switches, namely idle wakeups where the Old Thread is the idle
       // thread.
-      var contextSwitch = sample.SwitchIn.ContextSwitch;
+      var contextSwitch = sample.SwitchIn?.ContextSwitch;
+      if (contextSwitch == null)
+        return;
 
       // Ignore samples that are outside any given time interval.
       var timestamp = contextSwitch.Timestamp.RelativeTimestamp.TotalSeconds;
@@ -120,12 +122,14 @@ namespace IdleWakeups
         return;
       }
 
-      var switchInImageName = contextSwitch.SwitchIn.Process.ImageName;
-      var switchOutImageName = contextSwitch.SwitchOut.Process.ImageName;
+      var switchInImageName = contextSwitch.SwitchIn.Process?.ImageName;
+      var switchOutImageName = contextSwitch.SwitchOut.Process?.ImageName;
+      if (switchInImageName == null || switchOutImageName == null)
+        return;
 
       // Check if all processes shall be analyzed when switched in (filter set to '*') or if a
       // filter has been set (e.g. 'chrome.exe') and it contains the process name switching in.
-      if (_options.ProcessFilterSet == null ||
+        if (_options.ProcessFilterSet == null ||
           _options.ProcessFilterSet.Contains(switchInImageName))
       {
         _wallTimeStart = Math.Min(_wallTimeStart, timestamp);
@@ -183,12 +187,12 @@ namespace IdleWakeups
             {
               iwakeup.ContextSwitchDPCCount++;
             }
-            iwakeup.ProcessId = contextSwitch.SwitchIn.Process.Id;
-            iwakeup.ThreadName = contextSwitch.SwitchIn.Thread.Name;
-            iwakeup.ThreadStartAddress = contextSwitch.SwitchIn.Thread.StartAddress;
-            var commandLine = contextSwitch.SwitchIn.Process.CommandLine;
+            iwakeup.ProcessId = sample.Process.Id;
+            iwakeup.ThreadName = sample.Thread.Name;
+            iwakeup.ThreadStartAddress = sample.Thread.StartAddress;
+            var commandLine = sample.Process.CommandLine;
             iwakeup.ProcessName = switchInImageName;
-            iwakeup.ObjectAddress = contextSwitch.SwitchIn.Process.ObjectAddress;
+            iwakeup.ObjectAddress = sample.Process.ObjectAddress;
             if (switchInImageName == "chrome.exe")
             {
               // For chrome.exe, add process type and subtype in addition to the process name. 
@@ -268,7 +272,9 @@ namespace IdleWakeups
       if (timestamp < _options.TimeStart || timestamp > _options.TimeEnd)
         return;
 
-      var switchInImageName = contextSwitch.SwitchIn.Process.ImageName;
+      var switchInImageName = contextSwitch.SwitchIn.Process?.ImageName;
+      if (switchInImageName == null)
+        return;
 
       if (_options.ProcessFilterSet == null ||
           _options.ProcessFilterSet.Contains(switchInImageName))
@@ -276,8 +282,8 @@ namespace IdleWakeups
         _wallTimeStart = Math.Min(_wallTimeStart, timestamp);
         _wallTimeEnd = Math.Max(_wallTimeEnd, timestamp);
 
-        var switchOutImageName = contextSwitch.SwitchOut.Process.ImageName;
-        if (switchOutImageName != "Idle")
+        var switchOutImageName = contextSwitch.SwitchOut.Process?.ImageName;
+        if (switchOutImageName == null || switchOutImageName != "Idle")
           return;
 
         // The scope below represents an idle wakeup.

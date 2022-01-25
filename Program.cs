@@ -207,17 +207,27 @@ namespace IdleWakeups
         if (!opts.loadFromSymCache && (opts.loadSymbols ?? true))
         {
           ISymbolDataSource symbolData = pendingSymbolData.Result;
-          var symbolProgress = new Progress<SymbolLoadingProgress>(progress =>
+          if (opts.verboseOutput)
           {
-            Console.Write("\r{0:P} {1} of {2} symbols processed ({3} loaded)",
+            var symbolProgress = new Progress<SymbolLoadingProgress>(progress =>
+            {
+              Console.Write("\r{0:P} {1} of {2} symbols processed ({3} loaded)",
                           (double)progress.ImagesProcessed / progress.ImagesTotal,
                           progress.ImagesProcessed,
                           progress.ImagesTotal,
                           progress.ImagesLoaded);
-          });
-          symbolData.LoadSymbolsAsync(
-              SymCachePath.Automatic, SymbolPath.Automatic, symbolProgress)
-              .GetAwaiter().GetResult();
+            });
+            symbolData.LoadSymbolsAsync(
+                SymCachePath.Automatic, SymbolPath.Automatic, symbolProgress)
+                .GetAwaiter().GetResult();
+            Console.WriteLine();
+          } else
+          {
+            Console.Write("\rLoading symbols...");
+            symbolData.LoadSymbolsAsync(
+                SymCachePath.Automatic, SymbolPath.Automatic).GetAwaiter().GetResult();
+            Console.WriteLine();
+          }
         }
 
         if (opts.loadFromSymCache && (opts.loadSymbols ?? true))
@@ -253,7 +263,7 @@ namespace IdleWakeups
 
         for (var i = 0; i < cpuSchedData.ThreadActivity.Count; i++)
         {
-          if (i % 100 == 0)
+          if (i % 100 == 0 && opts.verboseOutput)
           {
             var samples = cpuSchedData.ThreadActivity.Count;
             double percent = (double)i / samples;
@@ -284,12 +294,12 @@ namespace IdleWakeups
         {
           outputSize = profileAnalyzer.WritePprof(opts.outputFileName);
         }
-        Console.WriteLine($"Wrote {outputSize:N0} bytes to {opts.outputFileName}");
-        Console.WriteLine();
 
         if (opts.verboseOutput)
         {
           watch.Stop();
+          Console.WriteLine($"Wrote {outputSize:N0} bytes to {opts.outputFileName}");
+          Console.WriteLine();
           Console.WriteLine($"Execution time: {watch.ElapsedMilliseconds} ms");
           Console.WriteLine();
         }
