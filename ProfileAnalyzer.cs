@@ -39,6 +39,7 @@ namespace IdleWakeups
       public decimal TimeEnd { get; set; }
       public bool IncludeProcessIds { get; set; }
       public bool IncludeProcessAndThreadIds { get; set; }
+      public bool IncludeWokenThreadIdsForWakers { get; set; }
       public bool SplitChromeProcesses { get; set; }
       public string? PprofComment { get; set; }
       public bool Tabbed { get; set; }
@@ -129,8 +130,8 @@ namespace IdleWakeups
 
       // Check if all processes shall be analyzed when switched in (filter set to '*') or if a
       // filter has been set (e.g. 'chrome.exe') and it contains the process name switching in.
-        if (_options.ProcessFilterSet == null ||
-          _options.ProcessFilterSet.Contains(switchInImageName))
+      if (_options.ProcessFilterSet == null ||
+        _options.ProcessFilterSet.Contains(switchInImageName))
       {
         _wallTimeStart = Math.Min(_wallTimeStart, timestamp);
         _wallTimeEnd = Math.Max(_wallTimeEnd, timestamp);
@@ -445,6 +446,23 @@ namespace IdleWakeups
           sampleProto.LocationId.Add(
             GetPseudoLocationId(processId, processName, objectAddress, processLabel));
 
+          if (_options.IncludeWokenThreadIdsForWakers &&
+              sample.Process != null && sample.Thread != null)
+          {
+            var wokenProcessId = sample.Process.Id;
+            var wokenProcessName = sample.Process.ImageName;
+            var wokenThreadLabel = sample.Thread.Name;
+            var wokenThreadId = sample.Thread.Id;
+            var wokenThreadStartAddress = sample.Thread?.StartAddress;
+            if (String.IsNullOrEmpty(wokenThreadLabel))
+              wokenThreadLabel = "anonymous";
+            // Prefix label with [!] to emphasize that the information is related to the thread
+            // which is woken up even if the label is added on the waker side.
+            wokenThreadLabel = String.Format("[!] {0} ({1})", wokenThreadLabel, wokenThreadId);
+            sampleProto.LocationId.Add(GetPseudoLocationId(
+                wokenProcessId, wokenProcessName, wokenThreadStartAddress, wokenThreadLabel));
+          }
+
           _profile.Sample.Add(sampleProto);
         }
       }
@@ -466,7 +484,7 @@ namespace IdleWakeups
       Console.WriteLine("{0,-25}{1}{2}", "Process filter", sep, processFilter);
       Console.WriteLine("{0,-25}{1}{2}", "Context switches (On-CPU)", sep, _filteredProcessContextSwitch);
       Console.WriteLine("{0,-25}{1}{2}", "Idle wakeups", sep, _filteredProcessIdleContextSwitch);
-      Console.WriteLine("{0,-25}{1}{2:F0}", "Idle wakeups/sec", sep, 
+      Console.WriteLine("{0,-25}{1}{2:F0}", "Idle wakeups/sec", sep,
         Math.Round(_filteredProcessIdleContextSwitch / durationInSec, MidpointRounding.AwayFromZero));
       Console.WriteLine("{0,-25}{1}{2:F}", "Idle wakeups (%)",
         sep, 100 * (double)_filteredProcessIdleContextSwitch / _filteredProcessContextSwitch);
@@ -575,6 +593,7 @@ namespace IdleWakeups
       var totalContextSwitchCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount);
       var totalContextSwitchPerSec = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount / durationInSec);
       var totalContextSwitchDPCCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchDPCCount);
+      var totalContextSwitchDPCPerSec = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchDPCCount / durationInSec);
       var totalWakerThreadStacksCount = _idleWakeupsByThreadId.Sum(x => x.Value.WakerThreadStacks.Count);
       var totalWokenThreadStacksCount = _idleWakeupsByThreadId.Sum(x => x.Value.WokenThreadStacks.Count);
       WriteHeaderLine(header.Length + 1);
@@ -589,7 +608,7 @@ namespace IdleWakeups
         Math.Round(totalContextSwitchPerSec, MidpointRounding.AwayFromZero), sep,
         totalContextSwitchDPCCount, sep,
         "", sep,
-        "", sep,
+        Math.Round(totalContextSwitchDPCPerSec, MidpointRounding.AwayFromZero), sep,
         totalWokenThreadStacksCount, sep,
         totalWakerThreadStacksCount);
     }
@@ -841,9 +860,9 @@ namespace IdleWakeups
     {
       var processId = stackSymbol.Image.ProcessId;
       var imagePath = stackSymbol.Image.Path;
-      var imageName = stackSymbol.Image.FileName;
       var functionAddress = stackSymbol.AddressRange.BaseAddress;
       var functionName = stackSymbol.FunctionName;
+      var imageName = stackSymbol.Image.FileName;
 
       var location = new Location(processId, imagePath, functionAddress, functionName);
 
