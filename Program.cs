@@ -104,6 +104,10 @@ namespace IdleWakeups
               HelpText = "Includes process and thread ids in the exported profile.")]
       public bool includeProcessAndThreadIds { get; set; }
 
+      [Option("includeWokenThreadIdsForWakers", Required = false, Default = false, SetName = "pprof",
+             HelpText = "Adds ids of woken threads for wakers in the exported profile.")]
+      public bool includeWokenThreadIdsForWakers { get; set; }
+
       [Option("splitChromeProcesses", Required = false, Default = true, SetName = "pprof",
               HelpText = "Splits chrome.exe processes by type in the exported profile.")]
       public bool splitChromeProcesses { get; set; }
@@ -247,6 +251,7 @@ namespace IdleWakeups
         profileOpts.TimeEnd = opts.timeEnd ?? decimal.MaxValue;
         profileOpts.IncludeProcessIds = opts.includeProcessIds;
         profileOpts.IncludeProcessAndThreadIds = opts.includeProcessAndThreadIds;
+        profileOpts.IncludeWokenThreadIdsForWakers = opts.includeWokenThreadIdsForWakers;
         profileOpts.SplitChromeProcesses = opts.splitChromeProcesses;
         profileOpts.PprofComment = opts.pprofComment;
         profileOpts.Tabbed = opts.printTabbed;
