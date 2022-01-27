@@ -105,7 +105,7 @@ namespace IdleWakeups
       public bool includeProcessAndThreadIds { get; set; }
 
       [Option("includeWokenThreadIdsForWakers", Required = false, Default = false, SetName = "pprof",
-             HelpText = "Adds ids of woken threads for wakers in the exported profile.")]
+             HelpText = "Adds ids of woken threads for waker threads in the exported profile.")]
       public bool includeWokenThreadIdsForWakers { get; set; }
 
       [Option("splitChromeProcesses", Required = false, Default = true, SetName = "pprof",

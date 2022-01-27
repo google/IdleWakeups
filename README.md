@@ -53,56 +53,61 @@ Reduce time to load symbols by reading from symbol cache which already contains 
 
 ## Command line flags
 
-    -o, --outputFileName            (Default: profile.pb.gz) Output file name for gzipped pprof
-                                    profile.
+    -o, --outputFileName                (Default: profile.pb.gz) Output file name for gzipped pprof
+                                        profile.
 
-    -p, --processFilter             (Default: chrome.exe) Filter for process names (comma-separated)
-                                    to be included in the analysis. All processes will be analyzed
-                                    if set to *.
+    -p, --processFilter                 (Default: chrome.exe) Filter for process names
+                                        (comma-separated) to be included in the analysis. All
+                                        processes will be analyzed if set to *.
 
-    --includeInlinedFunctions       (Default: false) Whether inlined functions should be included
-                                    in the exported profile (slow).
+    --includeInlinedFunctions           (Default: false) Whether inlined functions should be
+                                        included in the exported profile (slow).
 
-    --stripSourceFileNamePrefix     (Default: ^c:/b/s/w/ir/cache/builder/) Prefix regex to strip
-                                    out of source file names in the exported profile.
+    --stripSourceFileNamePrefix         (Default: ^c:/b/s/w/ir/cache/builder/) Prefix regex to
+                                        strip out of source file names in the exported profile.
 
-    --timeStart                     Start of time range to analyze in seconds
+    --timeStart                         Start of time range to analyze in seconds
 
-    --timeEnd                       End of time range to analyze in seconds
+    --timeEnd                           End of time range to analyze in seconds
 
-    --includeProcessIds             (Default: false) Includes process ids in the exported profile.
+    --includeProcessIds                 (Default: false) Includes process ids in the exported
+                                        profile.
 
-    --includeProcessAndThreadIds    (Default: false)  Includes process and thread ids in the
-                                    exported profile.
+    --includeProcessAndThreadIds        (Default: false)  Includes process and thread ids in the
+                                        exported profile.
 
-    --splitChromeProcesses          (Default: true) Splits chrome.exe processes by type in the
-                                    exported profile.
+    --includeWokenThreadIdsForWakers    (Default: false) Adds ids of woken threads for waker
+                                        threads in the exported profile.
 
-    -s, --writeSummary              (Default: false) Writes a summary after analysis has completed.
+    --splitChromeProcesses              (Default: true) Splits chrome.exe processes by type in the
+                                        exported profile.
+
+    -s, --writeSummary                  (Default: false) Writes a summary after analysis has
+                                        completed.
                                     
-    --loadSymbols                   (Default: true) Whether symbols should be loaded.
+    --loadSymbols                       (Default: true) Whether symbols should be loaded.
 
-    --loadFromSymCache              (Default: false) Loads symbols from cache where processed
-                                    symbols are stored.
+    --loadFromSymCache                  (Default: false) Loads symbols from cache where processed
+                                        symbols are stored.
 
-    --exportToPprof                 (Default: true) Whether results shall be exported to a gzipped
-                                    pprof profile.
+    --exportToPprof                     (Default: true) Whether results shall be exported to a
+                                        gzipped pprof profile.
 
-    --pprofComment                  (Default: ) Free-form annotation to add to the exported profile
-                                    as comment.
+    --pprofComment                      (Default: ) Free-form annotation to add to the exported
+                                        profile as comment.
 
-    --listProcesses                 (Default: false) Whether all process names (unique) shall be
-                                    printed out instead of running an analysis.
+    --listProcesses                     (Default: false) Whether all process names (unique) shall
+                                        be printed out instead of running an analysis.
 
-    -t, --tabbed                    (Default: false) Print results as a tab-separated grid.
+    -t, --tabbed                        (Default: false) Print results as a tab-separated grid.
 
-    -v, --verboseOutput             (Default: false) Set output to verbose messages.
+    -v, --verboseOutput                 (Default: false) Set output to verbose messages.
 
-    --help                          Display this help screen.
+    --help                              Display this help screen.
 
-    --version                       Display version information.
+    --version                           Display version information.
 
-    etlFileName (pos. 0)            Required. ETL trace file name.
+    etlFileName (pos. 0)                Required. ETL trace file name.
 
 ## Disclaimer:
 
