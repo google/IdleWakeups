@@ -295,9 +295,9 @@ namespace IdleWakeups
         // of another thread. This previously blocked thread is said to have been 'readied' by this
         // other thread.
 
-        // If the waker thread is executing a deferred procedure it means that the woken thread
-        // was not woken by a process; it was woken by a DPC call (doing work on behalf of an
-        // interrupt) that has hijacked a process temporarily.
+        // If the waker thread is executing a deferred procedure call it means that the woken
+        // thread was not woken by a process; it was woken by a DPC call (doing work on behalf of
+        // an interrupt) that has hijacked a process temporarily.
         bool wakerThreadIsExecutingDPC = false;
         // Get the process that made this thread become eligible to be switched in, if available.
         var wakerProcessImageName = sample.ReadyingProcess?.ImageName ?? "Unknown";
