@@ -247,6 +247,36 @@ namespace IdleWakeups
             iwakeup.WakerThreadStacks[wakerThreadStackKey] = stackFrames;
           }
 
+          // Gets the duration that the thread associated with this activity was in the waiting
+          // state before being readied (switched to the running state).
+          if (iwakeup.WaitingDuration == null)
+          {
+            iwakeup.WaitingDuration = new List<decimal>();
+          }
+          if (iwakeup.WaitingDuration != null)
+          {
+            var waitingDuration = sample.WaitingDuration;
+            if (waitingDuration.HasValue)
+            {
+              iwakeup.WaitingDuration.Add(waitingDuration.Value.TotalMicroseconds);
+            }
+          }
+
+          // Gets the duration that the thread associated with this activity was in the ready state
+          // before switching in (switched to the running state).
+          if (iwakeup.ReadyDuration == null)
+          {
+            iwakeup.ReadyDuration = new List<decimal>();
+          }
+          if (iwakeup.ReadyDuration != null)
+          {
+            var readyDuration = sample.ReadyDuration;
+            if (readyDuration.HasValue)
+            {
+              iwakeup.ReadyDuration.Add(readyDuration.Value.TotalMicroseconds);
+            }
+          }
+
           // Store all acquired information about the idle wakeup in a dictionary with thread ID
           // as key and the IdleWakeup structure as value.
           _idleWakeupsByThreadId[switchInThreadId] = iwakeup;
@@ -543,8 +573,28 @@ namespace IdleWakeups
       Console.WriteLine("Context switches where the waker thread is executing a deferred procedure call (DPC) are included in Count.");
       Console.WriteLine();
 
+      sep = _options.Tabbed ? "\t" : ": ";
+      composite = "{0,-18}{1}{2}";
+      Console.WriteLine(composite, "  TID", sep, "Thread ID");
+      Console.WriteLine(composite, "  PID", sep, "Process ID");
+      Console.WriteLine(composite, "  Count", sep, "Total number of idle wakeups");
+      Console.WriteLine(composite, "  DPC", sep, "Total number of deferred procedure calls (waker was a DPC)");
+      Console.WriteLine(composite, "  Woken Stacks", sep, "Number of unique woken call stacks");
+      Console.WriteLine(composite, "  Woken Stacks", sep, "Number of unique waker call stacks");
+      Console.WriteLine(composite, "  Avg Wait (msec)", sep,
+        "Average time (in milliseconds) the thread was in the waiting state before waking up");
+      Console.WriteLine(composite, "  Max Wait", sep,
+        "Max time the thread was in the waiting state before waking up");
+      Console.WriteLine(composite, "  Avg Ready (usec)", sep,
+        "Average time (in microseconds) the thread was in the ready state before waking up");
+      Console.WriteLine(composite, "  Max Ready", sep,
+        "Max time the thread was in the ready state before waking up");
+      Console.WriteLine();
+
+      sep = _options.Tabbed ? "\t" : " ";
       composite = "{0,6}{1}{2,6}{3}{4,-12}{5}{6,-12}{7}{8,-20}{9}{10,-55}{11}{12,6}{13}" +
-                  "{14,9}{15}{16,6}{17}{18,7:F}{19}{20,7}{21}{22,12}{23}{24,12}";
+                  "{14,9}{15}{16,6}{17}{18,7:F}{19}{20,7}{21}{22,12}{23}{24,12}{25}{26,15}" +
+                  "{27}{28,9}{29}{30,16}{31}{32,9}";
       header = string.Format(composite,
         "TID", sep,
         "PID", sep,
@@ -558,7 +608,11 @@ namespace IdleWakeups
         "DPC (%)", sep,
         "DPC/sec", sep,
         "Woken Stacks", sep,
-        "Waker Stacks");
+        "Waker Stacks", sep,
+        "Avg Wait (msec)", sep,
+        "Max Wait", sep,
+        "Avg Ready (usec)", sep,
+        "Max Ready");
       Console.WriteLine(header);
       WriteHeaderLine(header.Length + 1);
 
@@ -574,6 +628,22 @@ namespace IdleWakeups
         {
           dpcInPercentAsString = dpcInPercent.ToString("0.#0");
         }
+        string waitingDurationAverageAsString = "";
+        string waitingDurationMaxAsString = "";
+        var waitingDuration = value.WaitingDuration;
+        if (waitingDuration.Count > 0)
+        {
+          waitingDurationAverageAsString = (waitingDuration.Average() / 1000m).ToString("####.0");
+          waitingDurationMaxAsString = (waitingDuration.Max() / 1000m).ToString("####.0");
+        }
+        string readyDurationAverageAsString = "";
+        string readyDurationMaxAsString = "";
+        var readyDuration = value.ReadyDuration;
+        if (readyDuration.Count > 0)
+        {
+          readyDurationAverageAsString = (readyDuration.Average()).ToString("####.0");
+          readyDurationMaxAsString = (readyDuration.Max()).ToString("####.0");
+        }
         Console.WriteLine(composite,
           idleWakeup.Key, sep,
           value.ProcessId, sep,
@@ -587,7 +657,11 @@ namespace IdleWakeups
           dpcInPercentAsString, sep,
           Math.Round(value.ContextSwitchDPCCount / durationInSec, MidpointRounding.AwayFromZero).ToString("#"), sep,
           value.WokenThreadStacks.Count, sep,
-          value.WakerThreadStacks.Count);
+          value.WakerThreadStacks.Count, sep,
+          waitingDurationAverageAsString, sep,
+          waitingDurationMaxAsString, sep,
+          readyDurationAverageAsString, sep,
+          readyDurationMaxAsString);
       }
 
       var totalContextSwitchCount = _idleWakeupsByThreadId.Sum(x => x.Value.ContextSwitchCount);
@@ -610,7 +684,11 @@ namespace IdleWakeups
         "", sep,
         Math.Round(totalContextSwitchDPCPerSec, MidpointRounding.AwayFromZero), sep,
         totalWokenThreadStacksCount, sep,
-        totalWakerThreadStacksCount);
+        totalWakerThreadStacksCount, sep,
+        "", sep,
+        "", sep,
+        "", sep,
+        "");
     }
 
     public long WritePprof(string outputFileName)
@@ -665,6 +743,8 @@ namespace IdleWakeups
       public string ThreadName { get; set; }
       public Dictionary<string, StackFrames> WakerThreadStacks { get; set; }
       public Dictionary<string, StackFrames> WokenThreadStacks { get; set; }
+      public List<decimal> WaitingDuration { get; set; }
+      public List<decimal> ReadyDuration { get; set; }
     }
 
     private struct ChromeProcessType
